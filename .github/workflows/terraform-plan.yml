@@ -116,13 +116,19 @@ jobs:
             echo "Using instance principal authentication (running in OCI)"
           fi
 
-      - name: Initialize Terraform with Backend
+      - name: Initialize Terraform
         run: |
-          terraform init \
-            -backend-config="bucket_name=${{ vars.TF_STATE_BUCKET }}" \
-            -backend-config="namespace=${{ vars.TF_STATE_NAMESPACE }}" \
-            -backend-config="region=${{ vars.OCI_REGION }}" \
-            -backend-config="object_name=terraform.tfstate"
+          # Use remote state only once the state bucket variables are configured.
+          # The state bucket itself is provisioned by module.state_backend, so
+          # during bootstrap fall back to local-state initialization.
+          if [ -n "${{ vars.TF_STATE_BUCKET }}" ]; then
+            terraform init \
+              -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+              -backend-config="region=${{ vars.OCI_REGION }}" \
+              -backend-config="key=terraform.tfstate"
+          else
+            terraform init -backend=false
+          fi
         env:
           OCI_REGION: ${{ vars.OCI_REGION }}
 
@@ -132,6 +138,7 @@ jobs:
           terraform plan \
             -var-file=dev.tfvars \
             -var="oci_region=${{ vars.OCI_REGION }}" \
+            -var="root_compartment_ocid=${{ secrets.OCI_TENANCY_OCID }}" \
             -var="oci_tenancy_ocid=${{ secrets.OCI_TENANCY_OCID }}" \
             -var="oci_user_ocid=${{ secrets.OCI_USER_OCID }}" \
             -var="oci_fingerprint=${{ secrets.OCI_FINGERPRINT }}" \
