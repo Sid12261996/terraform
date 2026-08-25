@@ -586,7 +586,7 @@ variable "state_bucket_name" {
 }
 
 variable "state_bucket_namespace" {
-  description = "Object Storage namespace for the Terraform state bucket. Defaults to empty during bootstrap; set to your tenancy namespace once the state bucket is provisioned."
+  description = "Object Storage namespace for the Terraform state bucket. Leave empty to auto-detect the tenancy namespace."
   type        = string
   default     = ""
 }

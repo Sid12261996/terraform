@@ -12,6 +12,12 @@ data "oci_identity_availability_domains" "ads" {
   compartment_id = var.root_compartment_ocid
 }
 
+# Tenancy object storage namespace (required by object storage resources).
+# Resolved automatically so the state backend works during bootstrap.
+data "oci_objectstorage_namespace" "this" {
+  compartment_id = var.root_compartment_ocid
+}
+
 #####################
 # Locals
 #####################
@@ -33,14 +39,16 @@ locals {
     }
   }
 
-  # Common tags applied to all resources
+  # Common tags applied to all resources.
+  # NOTE: OCI forbids periods and spaces in freeform tag keys, so use
+  # underscore separators here (dots are only valid in defined tags).
   common_tags = merge(
     var.common_tags,
     {
-      "governance.environment" = var.environment
-      "governance.owner"       = var.owner_tag
-      "governance.cost-center" = var.cost_center_tag
-      "governance.project"     = var.project_tag
+      "governance_environment" = var.environment
+      "governance_owner"       = var.owner_tag
+      "governance_cost_center" = var.cost_center_tag
+      "governance_project"     = var.project_tag
     }
   )
 
@@ -299,7 +307,7 @@ module "state_backend" {
   compartment_ocid = var.root_compartment_ocid
 
   bucket_name      = var.state_bucket_name
-  bucket_namespace = var.state_bucket_namespace
+  bucket_namespace = var.state_bucket_namespace != "" ? var.state_bucket_namespace : data.oci_objectstorage_namespace.this.namespace
   bucket_region    = var.oci_region
 
   create_lock_table = var.create_state_lock_table
