@@ -81,6 +81,14 @@ resource "oci_core_instance_pool" "instance_pools" {
   freeform_tags = var.common_tags
 }
 
+# Instance members of each pool (used by outputs to report OCIDs/IPs)
+data "oci_core_instance_pool_instances" "pools" {
+  for_each = oci_core_instance_pool.instance_pools
+
+  compartment_id   = var.compartment_ocid
+  instance_pool_id = each.value.id
+}
+
 #####################
 # Locals
 #####################
