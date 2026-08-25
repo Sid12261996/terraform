@@ -8,10 +8,10 @@ variable "compartment_ocid" {
 variable "instance_shapes" {
   description = "Map of instance pool names to shape configs"
   type = map(object({
-    shape                    = string
-    ocpus                    = number
-    memory_in_gbs            = number
-    shape_config_ocpus       = optional(number)
+    shape                      = string
+    ocpus                      = number
+    memory_in_gbs              = number
+    shape_config_ocpus         = optional(number)
     shape_config_memory_in_gbs = optional(number)
   }))
 }
@@ -64,10 +64,10 @@ variable "user_data" {
 
 variable "availability_domains" {
   description = "List of availability domains"
-  type        = list(object({
+  type = list(object({
     name = string
   }))
-  default     = []
+  default = []
 }
 
 variable "common_tags" {

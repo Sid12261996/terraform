@@ -71,9 +71,9 @@ variable "security_list_rules" {
       description = optional(string)
     }))
     egress = list(object({
-      protocol  = string
+      protocol    = string
       destination = string
-      stateless = bool
+      stateless   = bool
       ports = object({
         min = number
         max = number
@@ -97,9 +97,9 @@ variable "nsg_rules" {
       description = optional(string)
     }))
     egress = list(object({
-      protocol  = string
+      protocol    = string
       destination = string
-      stateless = bool
+      stateless   = bool
       ports = object({
         min = number
         max = number
@@ -129,10 +129,10 @@ variable "dhcp_search_domain" {
 
 variable "availability_domains" {
   description = "List of availability domains"
-  type        = list(object({
+  type = list(object({
     name = string
   }))
-  default     = []
+  default = []
 }
 
 variable "common_tags" {

@@ -34,8 +34,8 @@ private_subnet_cidrs = {
 #####################
 instance_shapes = {
   "app-server" = {
-    shape       = "VM.Standard.E4.Flex"
-    ocpus       = 2
+    shape         = "VM.Standard.E4.Flex"
+    ocpus         = 2
     memory_in_gbs = 16
   }
 }
@@ -51,9 +51,9 @@ ssh_public_keys = [
 #####################
 # Load Balancer
 #####################
-create_public_lb  = true
-public_lb_min_bw  = 100
-public_lb_max_bw  = 1000
+create_public_lb = true
+public_lb_min_bw = 100
+public_lb_max_bw = 1000
 
 create_private_lb = true
 private_lb_min_bw = 100
@@ -66,7 +66,7 @@ create_atp = true
 atp_config = {
   display_name             = "staging-atp"
   db_name                  = "STGATP"
-  admin_password           = ""  # Set via TF_VAR_atp_admin_password
+  admin_password           = "" # Set via TF_VAR_atp_admin_password
   cpu_core_count           = 2
   data_storage_size_in_tbs = 1
   is_auto_scaling_enabled  = true
@@ -74,7 +74,7 @@ atp_config = {
   license_model            = "LICENSE_INCLUDED"
 }
 
-create_adw = false
+create_adw       = false
 create_db_system = false
 
 #####################
