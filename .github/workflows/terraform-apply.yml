@@ -66,6 +66,8 @@ jobs:
     name: Terraform Plan
     runs-on: ubuntu-latest
     needs: determine-environment
+    outputs:
+      has-changes: ${{ steps.plan-summary.outputs.has-changes }}
     environment: ${{ needs.determine-environment.outputs.environment }}
     concurrency:
       group: terraform-apply-${{ needs.determine-environment.outputs.environment }}
@@ -84,14 +86,15 @@ jobs:
         run: |
           if [ -n "${{ secrets.OCI_USER_OCID }}" ]; then
             echo "Using API key authentication"
+            mkdir -p ~/.oci
             cat > ~/.oci/config <<EOF
-[DEFAULT]
-user=${{ secrets.OCI_USER_OCID }}
-fingerprint=${{ secrets.OCI_FINGERPRINT }}
-tenancy=${{ secrets.OCI_TENANCY_OCID }}
-region=${{ vars.OCI_REGION }}
-key_file=~/.oci/oci_api_key.pem
-EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ vars.OCI_REGION }}
+          key_file=~/.oci/oci_api_key.pem
+          EOF
             echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
             chmod 600 ~/.oci/oci_api_key.pem
           else
@@ -155,7 +158,7 @@ EOF
               summary += "✅ No changes. Infrastructure is up to date.";
             } else {
               summary += `**Total: ${adds + changes + destroys} changes**\n\n`;
-              if (needs.determine-environment.outputs.environment == 'prod') {
+              if ('${{ needs.determine-environment.outputs.environment }}' === 'prod') {
                 summary += "⚠️ **PRODUCTION DEPLOYMENT** - Review carefully!";
               }
             }
@@ -210,14 +213,15 @@ EOF
         run: |
           if [ -n "${{ secrets.OCI_USER_OCID }}" ]; then
             echo "Using API key authentication"
+            mkdir -p ~/.oci
             cat > ~/.oci/config <<EOF
-[DEFAULT]
-user=${{ secrets.OCI_USER_OCID }}
-fingerprint=${{ secrets.OCI_FINGERPRINT }}
-tenancy=${{ secrets.OCI_TENANCY_OCID }}
-region=${{ vars.OCI_REGION }}
-key_file=~/.oci/oci_api_key.pem
-EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ vars.OCI_REGION }}
+          key_file=~/.oci/oci_api_key.pem
+          EOF
             echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
             chmod 600 ~/.oci/oci_api_key.pem
           else
@@ -233,6 +237,12 @@ EOF
             -backend-config="object_name=terraform.tfstate"
         env:
           OCI_REGION: ${{ vars.OCI_REGION }}
+
+      - name: Download Plan Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan-${{ needs.determine-environment.outputs.environment }}-${{ github.sha }}
+          path: .
 
       - name: Terraform Apply
         id: apply
