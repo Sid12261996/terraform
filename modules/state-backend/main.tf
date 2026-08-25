@@ -10,12 +10,13 @@
 #####################
 
 resource "oci_objectstorage_bucket" "state_bucket" {
-  compartment_id = var.compartment_ocid
-  name           = var.bucket_name
-  namespace      = var.bucket_namespace
-  storage_tier   = "Standard"
-  versioning     = "Enabled"
-  access_type    = "NoPublicAccess"
+  compartment_id        = var.compartment_ocid
+  name                  = var.bucket_name
+  namespace             = var.bucket_namespace
+  storage_tier          = "Standard"
+  versioning            = "Enabled"
+  access_type           = "NoPublicAccess"
+  object_events_enabled = true # CKV_OCI_7: allow bucket to emit object events
 
   freeform_tags = var.common_tags
 }

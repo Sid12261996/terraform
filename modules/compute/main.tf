@@ -111,6 +111,16 @@ resource "oci_core_instance" "instances" {
 
   shape = var.instance_shapes[each.value.pool_name].shape
 
+  launch_options {
+    # CKV_OCI_4: encrypt boot volume traffic in transit
+    is_pv_encryption_in_transit_enabled = true
+  }
+
+  instance_options {
+    # CKV_OCI_5: disable legacy instance metadata service endpoints
+    are_legacy_imds_endpoints_disabled = true
+  }
+
   shape_config {
     ocpus         = coalesce(var.instance_shapes[each.value.pool_name].shape_config_ocpus, var.instance_shapes[each.value.pool_name].ocpus)
     memory_in_gbs = coalesce(var.instance_shapes[each.value.pool_name].shape_config_memory_in_gbs, var.instance_shapes[each.value.pool_name].memory_in_gbs)
