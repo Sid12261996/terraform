@@ -63,9 +63,14 @@ resource "oci_database_autonomous_database" "lock_db" {
   freeform_tags = var.common_tags
 }
 
+# Autonomous Database admin password: 12-30 chars, must include upper,
+# lower, and numeric characters per OCI password policy
 resource "random_password" "lock_db_password" {
-  length  = 32
-  special = false
+  length      = 24
+  special     = false
+  min_upper   = 2
+  min_lower   = 2
+  min_numeric = 2
 }
 
 #####################
