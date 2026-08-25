@@ -14,18 +14,18 @@ variable "create_atp" {
 variable "atp_config" {
   description = "ATP configuration"
   type = object({
-    display_name        = string
-    db_name             = string
-    admin_password      = string
-    cpu_core_count      = number
+    display_name             = string
+    db_name                  = string
+    admin_password           = string
+    cpu_core_count           = number
     data_storage_size_in_tbs = number
-    is_auto_scaling_enabled = bool
-    is_free_tier        = bool
-    license_model       = string
-    nsg_ids             = list(string)
-    subnet_id           = string
-    private_endpoint_label = optional(string)
-    private_endpoint_ip   = optional(string)
+    is_auto_scaling_enabled  = bool
+    is_free_tier             = bool
+    license_model            = string
+    nsg_ids                  = list(string)
+    subnet_id                = string
+    private_endpoint_label   = optional(string)
+    private_endpoint_ip      = optional(string)
   })
 }
 
@@ -38,18 +38,18 @@ variable "create_adw" {
 variable "adw_config" {
   description = "ADW configuration"
   type = object({
-    display_name        = string
-    db_name             = string
-    admin_password      = string
-    cpu_core_count      = number
+    display_name             = string
+    db_name                  = string
+    admin_password           = string
+    cpu_core_count           = number
     data_storage_size_in_tbs = number
-    is_auto_scaling_enabled = bool
-    is_free_tier        = bool
-    license_model       = string
-    nsg_ids             = list(string)
-    subnet_id           = string
-    private_endpoint_label = optional(string)
-    private_endpoint_ip   = optional(string)
+    is_auto_scaling_enabled  = bool
+    is_free_tier             = bool
+    license_model            = string
+    nsg_ids                  = list(string)
+    subnet_id                = string
+    private_endpoint_label   = optional(string)
+    private_endpoint_ip      = optional(string)
   })
 }
 
@@ -62,18 +62,18 @@ variable "create_db_system" {
 variable "db_system_config" {
   description = "DB System configuration"
   type = object({
-    display_name           = string
-    shape                  = string
-    node_count             = number
-    db_version             = string
-    admin_password         = string
-    license_model          = string
-    storage_management     = string
-    data_storage_size_in_gbs = number
-    nsg_ids                = list(string)
-    subnet_id              = string
-    availability_domain    = string
-    enable_dataguard       = bool
+    display_name                = string
+    shape                       = string
+    node_count                  = number
+    db_version                  = string
+    admin_password              = string
+    license_model               = string
+    storage_management          = string
+    data_storage_size_in_gbs    = number
+    nsg_ids                     = list(string)
+    subnet_id                   = string
+    availability_domain         = string
+    enable_dataguard            = bool
     standby_availability_domain = optional(string)
   })
 }
@@ -81,6 +81,12 @@ variable "db_system_config" {
 variable "subnet_ocids" {
   description = "Subnet OCIDs"
   type        = map(string)
+}
+
+variable "ssh_public_keys" {
+  description = "SSH public keys for DB System access"
+  type        = list(string)
+  default     = []
 }
 
 variable "nsg_ocids" {

@@ -22,7 +22,7 @@ provider "oci" {
   # =============================================
   # No additional configuration needed - automatically detected
   # when running on an OCI instance with instance principal enabled
-  
+
   # =============================================
   # Authentication Method 2: API Key (Config File)
   # Used for local development and GitHub-hosted runners
@@ -30,11 +30,10 @@ provider "oci" {
   # Configured via:
   # - user_ocid, fingerprint, private_key_path, private_key_passphrase
   # - OR via ~/.oci/config file (DEFAULT profile)
-  
-  user_ocid           = var.oci_user_ocid != "" ? var.oci_user_ocid : null
-  fingerprint         = var.oci_fingerprint != "" ? var.oci_fingerprint : null
-  private_key_path    = var.oci_private_key_path != "" ? var.oci_private_key_path : null
-  private_key_passphrase = var.oci_private_key_passphrase != "" ? var.oci_private_key_passphrase : null
+
+  user_ocid        = var.oci_user_ocid != "" ? var.oci_user_ocid : null
+  fingerprint      = var.oci_fingerprint != "" ? var.oci_fingerprint : null
+  private_key_path = var.oci_private_key_path != "" ? var.oci_private_key_path : null
 
   # =============================================
   # Authentication Method 3: Security Token (OIDC)
@@ -46,7 +45,7 @@ provider "oci" {
   # =============================================
   # Retry Configuration
   # =============================================
-  max_retries = 3
+  disable_auto_retries = false
 
   # =============================================
   # Logging (for debugging)
@@ -86,11 +85,8 @@ provider "time" {}
 # Data Sources for Provider Validation
 #####################
 
-data "oci_identity_tenancy" "current" {}
-
-# Verify provider can authenticate and list availability domains
-data "oci_identity_availability_domains" "validate" {
-  compartment_id = var.root_compartment_ocid
+data "oci_identity_tenancy" "current" {
+  tenancy_id = var.oci_tenancy_ocid
 }
 
 #####################
@@ -99,20 +95,20 @@ data "oci_identity_availability_domains" "validate" {
 
 output "provider_auth_method" {
   description = "Detected authentication method"
-  value = var.oci_user_ocid != "" ? "api_key" : "instance_principal"
+  value       = var.oci_user_ocid != "" ? "api_key" : "instance_principal"
 }
 
 output "provider_region" {
   description = "Configured OCI region"
-  value = var.oci_region
+  value       = var.oci_region
 }
 
 output "provider_tenancy" {
   description = "Configured tenancy OCID"
-  value = var.oci_tenancy_ocid
+  value       = var.oci_tenancy_ocid
 }
 
 output "available_ads" {
   description = "Available availability domains"
-  value = data.oci_identity_availability_domains.validate.availability_domains[*].name
+  value       = data.oci_identity_availability_domains.ads.availability_domains[*].name
 }

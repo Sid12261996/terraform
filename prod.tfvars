@@ -34,8 +34,8 @@ private_subnet_cidrs = {
 #####################
 instance_shapes = {
   "app-server" = {
-    shape       = "VM.Standard.E4.Flex"
-    ocpus       = 4
+    shape         = "VM.Standard.E4.Flex"
+    ocpus         = 4
     memory_in_gbs = 32
   }
 }
@@ -51,9 +51,9 @@ ssh_public_keys = [
 #####################
 # Load Balancer - Full capacity for prod
 #####################
-create_public_lb  = true
-public_lb_min_bw  = 100
-public_lb_max_bw  = 8000
+create_public_lb = true
+public_lb_min_bw = 100
+public_lb_max_bw = 8000
 
 create_private_lb = true
 private_lb_min_bw = 100
@@ -66,7 +66,7 @@ create_atp = true
 atp_config = {
   display_name             = "prod-atp"
   db_name                  = "PRODATP"
-  admin_password           = ""  # Set via TF_VAR_atp_admin_password (use secret manager in prod)
+  admin_password           = "" # Set via TF_VAR_atp_admin_password (use secret manager in prod)
   cpu_core_count           = 4
   data_storage_size_in_tbs = 2
   is_auto_scaling_enabled  = true
@@ -74,7 +74,7 @@ atp_config = {
   license_model            = "LICENSE_INCLUDED"
 }
 
-create_adw = false
+create_adw       = false
 create_db_system = false
 
 #####################

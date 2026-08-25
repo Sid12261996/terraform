@@ -34,8 +34,8 @@ private_subnet_cidrs = {
 #####################
 instance_shapes = {
   "app-server" = {
-    shape       = "VM.Standard.E4.Flex"
-    ocpus       = 1
+    shape         = "VM.Standard.E4.Flex"
+    ocpus         = 1
     memory_in_gbs = 8
   }
 }
@@ -52,9 +52,9 @@ ssh_public_keys = [
 #####################
 # Load Balancer - Minimal for dev
 #####################
-create_public_lb  = true
-public_lb_min_bw  = 10
-public_lb_max_bw  = 100
+create_public_lb = true
+public_lb_min_bw = 10
+public_lb_max_bw = 100
 
 create_private_lb = false
 
@@ -65,7 +65,7 @@ create_atp = true
 atp_config = {
   display_name             = "dev-atp"
   db_name                  = "DEVATP"
-  admin_password           = ""  # Set via TF_VAR_atp_admin_password
+  admin_password           = "" # Set via TF_VAR_atp_admin_password
   cpu_core_count           = 1
   data_storage_size_in_tbs = 1
   is_auto_scaling_enabled  = false
@@ -73,7 +73,7 @@ atp_config = {
   license_model            = "LICENSE_INCLUDED"
 }
 
-create_adw = false
+create_adw       = false
 create_db_system = false
 
 #####################
