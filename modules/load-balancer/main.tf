@@ -45,22 +45,25 @@ resource "oci_load_balancer_backend_set" "public" {
   }
 }
 
-# Backends are managed as individual resources (inline "backend" blocks are read-only)
+# Backends are managed as individual resources (inline "backend" blocks are read-only).
+# Keys combine the (plan-time-known) pool name with the position inside the pool so
+# for_each never depends on values that are only known after apply.
 locals {
-  lb_backends = flatten([
-    for pool_name, ips in var.backend_servers :
-    [for ip in ips : {
-      key        = "${replace(ip, ".", "-")}"
-      ip_address = ip
-      port       = var.backend_port
-      weight     = 1
-      backup     = false
-    }]
-  ])
+  lb_backends_map = merge([
+    for pool_name, ips in var.backend_servers : {
+      for idx, ip in ips :
+      "${pool_name}-${idx}" => {
+        ip_address = ip
+        port       = var.backend_port
+        weight     = 1
+        backup     = false
+      }
+    }
+  ]...)
 }
 
 resource "oci_load_balancer_backend" "public_backends" {
-  for_each = var.create_public_lb ? { for b in local.lb_backends : b.key => b } : {}
+  for_each = var.create_public_lb ? local.lb_backends_map : {}
 
   load_balancer_id = oci_load_balancer_load_balancer.public[0].id
   backendset_name  = oci_load_balancer_backend_set.public[0].name
@@ -137,7 +140,7 @@ resource "oci_load_balancer_backend_set" "private" {
 }
 
 resource "oci_load_balancer_backend" "private_backends" {
-  for_each = var.create_private_lb ? { for b in local.lb_backends : b.key => b } : {}
+  for_each = var.create_private_lb ? local.lb_backends_map : {}
 
   load_balancer_id = oci_load_balancer_load_balancer.private[0].id
   backendset_name  = oci_load_balancer_backend_set.private[0].name
