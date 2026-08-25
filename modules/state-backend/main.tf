@@ -21,10 +21,35 @@ resource "oci_objectstorage_bucket" "state_bucket" {
   freeform_tags = var.common_tags
 }
 
+# Service permission required by object lifecycle policies
+# (docs.oracle.com/en-us/iaas/Content/Object/Tasks/usinglifecyclepolicies.htm).
+# Without this the lifecycle PUT fails with 400-InsufficientServicePermissions.
+resource "oci_identity_policy" "objectstorage_service" {
+  compartment_id = var.compartment_ocid
+  name           = "state-bucket-object-lifecycle"
+  description    = "Allow Object Storage service to execute lifecycle policies on the state bucket"
+
+  statements = [
+    "Allow service objectstorage-${var.bucket_region} to manage object-family in compartment id ${var.compartment_ocid}"
+  ]
+
+  freeform_tags = var.common_tags
+}
+
+# IAM policies propagate asynchronously; wait so the lifecycle PUT below
+# does not race the grant above.
+resource "time_sleep" "wait_for_objectstorage_policy" {
+  create_duration = "60s"
+
+  depends_on = [oci_identity_policy.objectstorage_service]
+}
+
 # Object lifecycle policy: delete non-current object versions after 90 days
 resource "oci_objectstorage_object_lifecycle_policy" "state_bucket" {
   namespace = var.bucket_namespace
   bucket    = oci_objectstorage_bucket.state_bucket.name
+
+  depends_on = [time_sleep.wait_for_objectstorage_policy]
 
   rules {
     name        = "delete-old-versions"

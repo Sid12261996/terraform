@@ -61,18 +61,21 @@ locals {
   osn_service = one([
     for s in data.oci_core_services.all_osn.services :
     {
-      id   = s.id
-      name = s.name
+      id         = s.id
+      name       = s.name
+      cidr_block = s.cidr_block
     } if can(regex("All .* Services [Ii]n Oracle Services Network", s.name))
   ])
 
   create_sgw = var.create_service_gateway && local.osn_service != null ? true : false
 
   # Route to Oracle Services Network via the Service Gateway.
-  # The destination must be the service name exactly as returned by the API.
+  # The destination must be the service's cidr_block label exactly as
+  # returned by the API; the display name is rejected by
+  # CreateRouteTable ("Unknown service cidr").
   sgw_route_rule = {
     network_entity_id = local.create_sgw ? oci_core_service_gateway.sgw[0].id : ""
-    destination       = local.osn_service != null ? local.osn_service.name : ""
+    destination       = local.osn_service != null ? local.osn_service.cidr_block : ""
     destination_type  = "SERVICE_CIDR_BLOCK"
     description       = "Service Gateway"
   }

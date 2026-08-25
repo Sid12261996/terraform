@@ -133,8 +133,13 @@ module "identity" {
   functional_compartment_names = ["network", "compute", "database", "identity", "lb"]
 
   # Groups
-  admin_groups   = var.admin_groups
-  dynamic_groups = var.dynamic_groups
+  admin_groups = var.admin_groups
+  # Substitute the tenancy OCID for the documented placeholder so
+  # matching rules reference a real compartment instead of the literal
+  # string "ROOT_COMPARTMENT_OCID".
+  dynamic_groups = {
+    for name, rule in var.dynamic_groups : name => replace(rule, "ROOT_COMPARTMENT_OCID", var.root_compartment_ocid)
+  }
 
   # Tagging
   tag_namespace_name = var.tag_namespace_name
