@@ -9,14 +9,51 @@
 # Data Sources
 #####################
 
-# Default Oracle Linux image if not specified
-data "oci_core_images" "oracle_linux" {
+# Default Oracle Linux x86_64 image for non-ARM shapes
+data "oci_core_images" "oracle_linux_x86" {
   compartment_id           = var.compartment_ocid
   operating_system         = "Oracle Linux"
   operating_system_version = "8"
   shape                    = "VM.Standard.E4.Flex"
   sort_by                  = "TIMECREATED"
   sort_order               = "DESC"
+}
+
+# Default Oracle Linux aarch64 image for Ampere ARM shapes
+data "oci_core_images" "oracle_linux_aarch64" {
+  compartment_id           = var.compartment_ocid
+  operating_system         = "Oracle Linux"
+  operating_system_version = "8"
+  shape                    = "VM.Standard.A1.Flex"
+  sort_by                  = "TIMECREATED"
+  sort_order               = "DESC"
+}
+
+#####################
+# Locals
+#####################
+
+locals {
+  # Architecture-aware default image per pool: A1 (arm64) shapes get aarch64
+  # images, all other shapes get x86_64 images. Explicit instance_images win.
+  pool_image_ids = {
+    for name, cfg in var.instance_shapes :
+    name => (
+      try(var.instance_images[name], "") != "" ?
+      var.instance_images[name] :
+      (
+        startswith(cfg.shape, "VM.Standard.A1") ?
+        data.oci_core_images.oracle_linux_aarch64.images[0].id :
+        data.oci_core_images.oracle_linux_x86.images[0].id
+      )
+    )
+  }
+
+  # Effective user_data per pool: per-pool override wins over global value
+  pool_user_data = {
+    for name in keys(var.instance_shapes) :
+    name => lookup(var.instance_user_data, name, var.user_data)
+  }
 }
 
 #####################
@@ -42,8 +79,8 @@ resource "oci_core_instance_configuration" "instance_configs" {
 
       source_details {
         source_type = "image"
-        # Use a custom image when provided per pool, otherwise the latest Oracle Linux image
-        image_id = try(var.instance_images[each.key], "") != "" ? var.instance_images[each.key] : data.oci_core_images.oracle_linux.images[0].id
+        # Architecture-aware: custom image if provided, else latest matching image
+        image_id = local.pool_image_ids[each.key]
       }
 
       create_vnic_details {
@@ -56,7 +93,7 @@ resource "oci_core_instance_configuration" "instance_configs" {
         var.instance_metadata,
         {
           "ssh_authorized_keys" = join("\n", var.ssh_public_keys)
-          "user_data"           = var.user_data
+          "user_data"           = local.pool_user_data[each.key]
         }
       )
     }
@@ -137,7 +174,8 @@ resource "oci_core_instance" "instances" {
 
   source_details {
     source_type = "image"
-    source_id   = try(var.instance_images[each.value.pool_name], "") != "" ? var.instance_images[each.value.pool_name] : data.oci_core_images.oracle_linux.images[0].id
+    # Architecture-aware: custom image if provided, else latest matching image
+    source_id = local.pool_image_ids[each.value.pool_name]
   }
 
   create_vnic_details {
@@ -150,13 +188,39 @@ resource "oci_core_instance" "instances" {
     var.instance_metadata,
     {
       "ssh_authorized_keys" = join("\n", var.ssh_public_keys)
-      "user_data"           = var.user_data
+      "user_data"           = local.pool_user_data[each.value.pool_name]
     }
   )
 
   availability_domain = var.availability_domains[each.value.slot % length(var.availability_domains)].name
 
   freeform_tags = var.common_tags
+}
+
+#####################
+# Dedicated Block Volumes (per pool)
+#####################
+
+# One data volume per configured pool. Volumes live outside the instance
+# lifecycle, so replacing an instance preserves the attached data volume.
+resource "oci_core_volume" "app_data" {
+  for_each = var.data_volumes
+
+  availability_domain = var.availability_domains[0].name
+  compartment_id      = var.compartment_ocid
+  display_name        = "${each.key}-data"
+  size_in_gbs         = each.value.size_in_gbs
+
+  freeform_tags = var.common_tags
+}
+
+resource "oci_core_volume_attachment" "app_data" {
+  for_each = oci_core_volume.app_data
+
+  attachment_type = "paravirtualized"
+  display_name    = "${each.key}-data-attachment"
+  instance_id     = oci_core_instance.instances["${each.key}-1"].id
+  volume_id       = each.value.id
 }
 
 #####################

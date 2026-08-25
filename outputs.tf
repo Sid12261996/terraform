@@ -248,3 +248,21 @@ output "deployment_summary" {
     }
   }
 }
+#####################
+# Apps: Immich
+#####################
+
+output "immich_url" {
+  description = "Ready-to-use Immich web URL via the public load balancer (null when disabled)"
+  value       = var.apps_immich.enabled && length(module.load_balancer.public_lb_ips) > 0 ? "http://${module.load_balancer.public_lb_ips[0]}:2283" : null
+}
+
+output "immich_instance_private_ip" {
+  description = "Private IP of the Immich server for SSH access (null when disabled)"
+  value       = var.apps_immich.enabled ? one(lookup(module.compute.instance_private_ips, "immich", [null])) : null
+}
+
+output "immich_data_volume_ocid" {
+  description = "OCID of the Immich photo library block volume (null when disabled)"
+  value       = var.apps_immich.enabled ? lookup(module.compute.data_volume_ocids, "immich", null) : null
+}

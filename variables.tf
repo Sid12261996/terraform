@@ -612,3 +612,28 @@ variable "output_sensitive_values" {
   type        = bool
   default     = false
 }
+variable "apps_immich" {
+  description = "Self-hosted Immich photo library profile. Disabled by default; only environments that enable it provision Immich resources."
+  type = object({
+    enabled             = bool
+    shape               = string
+    ocpus               = number
+    memory_in_gbs       = number
+    data_volume_size_gb = number
+    library_mount       = string
+    install_dir         = string
+    immich_version      = string
+    allowed_lb_cidrs    = list(string)
+  })
+  default = {
+    enabled             = false
+    shape               = "VM.Standard.A1.Flex"
+    ocpus               = 4
+    memory_in_gbs       = 24
+    data_volume_size_gb = 200
+    library_mount       = "/srv/apps/immich"
+    install_dir         = "/srv/apps/immich/app"
+    immich_version      = "release"
+    allowed_lb_cidrs    = []
+  }
+}

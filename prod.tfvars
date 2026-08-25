@@ -94,3 +94,18 @@ common_tags = {
 # State Backend
 #####################
 state_bucket_name = "terraform-state-prod"
+#####################
+# Apps - Immich photo library
+# See apps/immich/README.md for operation, data locations, and upgrades
+#####################
+apps_immich = {
+  enabled             = true
+  shape               = "VM.Standard.A1.Flex"
+  ocpus               = 4
+  memory_in_gbs       = 24
+  data_volume_size_gb = 200
+  library_mount       = "/srv/apps/immich"
+  install_dir         = "/srv/apps/immich/app"
+  immich_version      = "release"
+  allowed_lb_cidrs    = ["10.20.1.0/24", "10.20.2.0/24", "10.20.3.0/24"]
+}

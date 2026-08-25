@@ -75,3 +75,16 @@ variable "common_tags" {
   type        = map(string)
   default     = {}
 }
+variable "instance_user_data" {
+  description = "Per-pool cloud-init user data overrides (base64 encoded); falls back to user_data for unlisted pools"
+  type        = map(string)
+  default     = {}
+}
+
+variable "data_volumes" {
+  description = "Per-pool dedicated block volumes. Only supported for pools using individual instances (count >= 1). Volumes survive instance replacement."
+  type = map(object({
+    size_in_gbs = number
+  }))
+  default = {}
+}

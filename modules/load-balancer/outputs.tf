@@ -37,3 +37,12 @@ output "listeners" {
     private_tcp  = var.create_private_lb ? oci_load_balancer_listener.private_tcp[0].name : null
   }
 }
+output "route_backend_set_names" {
+  description = "Additional route backend set names by route"
+  value       = { for k, v in oci_load_balancer_backend_set.routes : k => v.name }
+}
+
+output "route_listener_names" {
+  description = "Additional route listener names by route"
+  value       = { for k, v in oci_load_balancer_listener.routes : k => v.name }
+}
