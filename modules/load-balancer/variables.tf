@@ -110,3 +110,24 @@ variable "common_tags" {
   type        = map(string)
   default     = {}
 }
+variable "additional_routes" {
+  description = "Additional named service routes on the public LB: route name -> route config. Creates one backend set + listener per name without touching the default backend set."
+  type = map(object({
+    listener_port            = number
+    protocol                 = optional(string, "HTTP")
+    backend_port             = number
+    health_check_protocol    = optional(string, "HTTP")
+    health_check_path        = optional(string, "/")
+    health_check_port        = optional(number)
+    health_check_interval_ms = optional(number, 30000)
+    health_check_timeout_ms  = optional(number, 5000)
+    health_check_retries     = optional(number, 3)
+  }))
+  default = {}
+}
+
+variable "route_backends" {
+  description = "Backend server private IPs per additional route name"
+  type        = map(list(string))
+  default     = {}
+}

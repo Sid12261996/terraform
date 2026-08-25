@@ -1,0 +1,85 @@
+#cloud-config
+
+package_update: true
+
+packages:
+  - curl
+  - e2fsprogs
+  - openssl
+
+write_files:
+  - path: /usr/local/sbin/immich-bootstrap.sh
+    permissions: "0750"
+    content: |
+      #!/usr/bin/env bash
+      # Immich first-boot bootstrap: Docker install, data-volume mount, app install.
+      # Idempotent: safe to re-run manually for troubleshooting.
+      set -euo pipefail
+      log() { echo "[immich-bootstrap] $*"; }
+
+      LIBRARY_MOUNT="${library_mount}"
+      APP_DIR="${install_dir}"
+      IMMICH_VERSION="${immich_version}"
+
+      # ---------- Docker ----------
+      if ! command -v docker >/dev/null 2>&1; then
+        log "installing Docker CE"
+        dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+        dnf -y install docker-ce docker-ce-cli containerd.io docker-compose-plugin
+      fi
+      systemctl enable --now docker
+
+      # ---------- Data volume: locate, format once, mount persistently ----------
+      ROOT_DEV="$(findmnt -n -o SOURCE /)"
+      ROOT_DISK="/dev/$(lsblk -no PKNAME "$$ROOT_DEV" | tr -d ' ')"
+      DATA_DEV="$(lsblk -dpno NAME,TYPE | awk '$$2=="disk"{print $$1}' | grep -v "^$${ROOT_DISK}$$" | head -n1)"
+      if [ -z "$$DATA_DEV" ]; then
+        log "ERROR: no dedicated data disk found"
+        exit 1
+      fi
+      log "data disk: $$DATA_DEV"
+      # One-time format guard: never re-format a disk that already has a filesystem
+      if ! blkid "$$DATA_DEV" >/dev/null 2>&1; then
+        log "creating ext4 filesystem on $$DATA_DEV"
+        mkfs.ext4 -F "$$DATA_DEV"
+      fi
+      mkdir -p "$$LIBRARY_MOUNT"
+      UUID="$(blkid -s UUID -o value "$$DATA_DEV")"
+      if ! grep -q "UUID=$$UUID" /etc/fstab; then
+        echo "UUID=$$UUID $$LIBRARY_MOUNT ext4 defaults,nofail 0 2" >> /etc/fstab
+      fi
+      mount -a
+
+      mkdir -p "$$LIBRARY_MOUNT/library" "$$LIBRARY_MOUNT/postgres" "$$APP_DIR"
+
+      # ---------- Immich official install script ----------
+      COMPOSE_DIR="$$APP_DIR/immich-app"
+      if [ ! -f "$$COMPOSE_DIR/docker-compose.yml" ]; then
+        log "running Immich install script into $$COMPOSE_DIR"
+        cd "$$APP_DIR"
+        curl -fsSL https://raw.githubusercontent.com/immich-app/immich/main/install.sh | bash
+      fi
+
+      ENV_FILE="$$COMPOSE_DIR/.env"
+      if [ ! -f "$$ENV_FILE" ] && [ -f "$$COMPOSE_DIR/example.env" ]; then
+        cp "$$COMPOSE_DIR/example.env" "$$ENV_FILE"
+      fi
+      if [ ! -f "$$ENV_FILE" ]; then
+        log "ERROR: .env not found after install"
+        exit 1
+      fi
+      sed -i "s|^UPLOAD_LOCATION=.*|UPLOAD_LOCATION=$$LIBRARY_MOUNT/library|" "$$ENV_FILE"
+      sed -i "s|^DB_DATA_LOCATION=.*|DB_DATA_LOCATION=$$LIBRARY_MOUNT/postgres|" "$$ENV_FILE"
+      sed -i "s|^IMMICH_VERSION=.*|IMMICH_VERSION=$$IMMICH_VERSION|" "$$ENV_FILE"
+      if grep -Eq '^DB_PASSWORD=(postgres)?$' "$$ENV_FILE"; then
+        sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=$(openssl rand -hex 24)/" "$$ENV_FILE"
+      fi
+      chmod 600 "$$ENV_FILE"
+
+      log "starting Immich containers"
+      cd "$$COMPOSE_DIR"
+      docker compose up --remove-orphans -d
+      log "done - Immich serves on local port 2283"
+
+runcmd:
+  - bash /usr/local/sbin/immich-bootstrap.sh > /var/log/immich-bootstrap.log 2>&1

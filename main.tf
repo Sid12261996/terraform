@@ -46,6 +46,71 @@ locals {
 
   # Availability domains
   availability_domains = data.oci_identity_availability_domains.ads.availability_domains
+
+  #####################
+  # Apps: Immich photo library (gated by enabled; see apps/immich/README.md)
+  #####################
+  apps_immich_enabled = var.apps_immich.enabled
+
+  instance_shapes_effective = local.apps_immich_enabled ? merge(var.instance_shapes, {
+    "immich" = {
+      shape                      = var.apps_immich.shape
+      ocpus                      = var.apps_immich.ocpus
+      memory_in_gbs              = var.apps_immich.memory_in_gbs
+      shape_config_ocpus         = null
+      shape_config_memory_in_gbs = null
+    }
+  }) : var.instance_shapes
+
+  instance_counts_effective = local.apps_immich_enabled ? merge(var.instance_counts, {
+    "immich" = 1
+  }) : var.instance_counts
+
+  data_volumes_effective = local.apps_immich_enabled ? {
+    "immich" = { size_in_gbs = var.apps_immich.data_volume_size_gb }
+  } : {}
+
+  immich_user_data = base64encode(templatefile("${path.module}/apps/immich/cloud-init.yml.tftpl", {
+    library_mount  = var.apps_immich.library_mount
+    install_dir    = var.apps_immich.install_dir
+    immich_version = var.apps_immich.immich_version
+  }))
+  instance_user_data_effective = local.apps_immich_enabled ? {
+    "immich" = local.immich_user_data
+  } : {}
+
+  # Allow only the public LB subnets to reach the Immich backend on port 2283
+  nsg_rules_effective = local.apps_immich_enabled ? merge(var.nsg_rules, {
+    "app" = merge(var.nsg_rules["app"], {
+      ingress = concat(
+        var.nsg_rules["app"].ingress,
+        [
+          for cidr in var.apps_immich.allowed_lb_cidrs :
+          {
+            protocol    = "6"
+            source      = cidr
+            stateless   = false
+            ports       = { min = 2283, max = 2283 }
+            description = "Immich via public LB"
+          }
+        ]
+      )
+    })
+  }) : var.nsg_rules
+
+  additional_routes_effective = local.apps_immich_enabled ? {
+    "immich" = {
+      listener_port            = 2283
+      protocol                 = "HTTP"
+      backend_port             = 2283
+      health_check_protocol    = "HTTP"
+      health_check_path        = "/api/server/ping"
+      health_check_port        = null
+      health_check_interval_ms = 30000
+      health_check_timeout_ms  = 5000
+      health_check_retries     = 3
+    }
+  } : {}
 }
 
 #####################
@@ -96,7 +161,7 @@ module "network" {
 
   # Security
   security_list_rules = var.security_list_rules
-  nsg_rules           = var.nsg_rules
+  nsg_rules           = local.nsg_rules_effective
 
   # DNS
   dhcp_dns_type      = var.dhcp_dns_type
@@ -118,9 +183,10 @@ module "compute" {
   compartment_ocid = module.identity.functional_compartment_ocids["compute"]
 
   # Instance configuration
-  instance_shapes = var.instance_shapes
+  instance_shapes = local.instance_shapes_effective
   instance_images = var.instance_images
-  instance_counts = var.instance_counts
+  instance_counts = local.instance_counts_effective
+  data_volumes    = local.data_volumes_effective
 
   # Network
   subnet_ocids     = module.network.private_subnet_ocids
@@ -131,8 +197,9 @@ module "compute" {
   ssh_public_keys = var.ssh_public_keys
 
   # Metadata
-  instance_metadata = var.instance_metadata
-  user_data         = var.user_data
+  instance_metadata  = var.instance_metadata
+  user_data          = var.user_data
+  instance_user_data = local.instance_user_data_effective
 
   availability_domains = local.availability_domains
 
@@ -162,9 +229,20 @@ module "load_balancer" {
   private_lb_max_bw    = var.private_lb_max_bw
   private_subnet_ocids = module.network.private_subnet_ocids
 
-  # Backend configuration
-  backend_servers = module.compute.instance_private_ips
-  backend_port    = var.backend_port
+  # Backend configuration - default set serves the generic app pool(s);
+  # dedicated apps like immich get their own named route below.
+  backend_servers = {
+    for pool_name, ips in module.compute.instance_private_ips :
+    pool_name => ips
+    if !local.apps_immich_enabled || pool_name != "immich"
+  }
+  backend_port = var.backend_port
+
+  # Additional named service routes (e.g., Immich on 2283)
+  additional_routes = local.additional_routes_effective
+  route_backends = local.apps_immich_enabled ? {
+    "immich" = lookup(module.compute.instance_private_ips, "immich", [])
+  } : {}
 
   # Health checks
   health_check_protocol = var.health_check_protocol

@@ -99,6 +99,67 @@ resource "oci_load_balancer_listener" "public_https" {
 }
 
 #####################
+# Additional Named Service Routes (public LB)
+#####################
+
+# One backend set + listener per named route so multiple services with distinct
+# ports can share the public load balancer. The default backend set and its
+# listeners above are untouched.
+resource "oci_load_balancer_backend_set" "routes" {
+  for_each = var.create_public_lb ? var.additional_routes : {}
+
+  load_balancer_id = oci_load_balancer_load_balancer.public[0].id
+  name             = "${each.key}-backend-set"
+  policy           = "ROUND_ROBIN"
+
+  health_checker {
+    protocol          = each.value.health_check_protocol
+    port              = coalesce(each.value.health_check_port, each.value.backend_port)
+    url_path          = each.value.health_check_protocol == "HTTP" ? each.value.health_check_path : null
+    interval_ms       = each.value.health_check_interval_ms
+    timeout_in_millis = each.value.health_check_timeout_ms
+    retries           = each.value.health_check_retries
+  }
+
+  session_persistence_configuration {
+    cookie_name      = "${each.key}_LB_SESSION"
+    disable_fallback = false
+  }
+}
+
+locals {
+  lb_route_backends_map = merge([
+    for route_name in keys(var.additional_routes) : {
+      for idx, ip in lookup(var.route_backends, route_name, []) :
+      "${route_name}-${idx}" => {
+        route_name = route_name
+        ip_address = ip
+      }
+    }
+  ]...)
+}
+
+resource "oci_load_balancer_backend" "route_backends" {
+  for_each = var.create_public_lb ? local.lb_route_backends_map : {}
+
+  load_balancer_id = oci_load_balancer_load_balancer.public[0].id
+  backendset_name  = oci_load_balancer_backend_set.routes[each.value.route_name].name
+  ip_address       = each.value.ip_address
+  port             = var.additional_routes[each.value.route_name].backend_port
+  weight           = 1
+}
+
+resource "oci_load_balancer_listener" "routes" {
+  for_each = var.create_public_lb ? var.additional_routes : {}
+
+  load_balancer_id         = oci_load_balancer_load_balancer.public[0].id
+  name                     = "${each.key}-listener"
+  protocol                 = each.value.protocol
+  port                     = each.value.listener_port
+  default_backend_set_name = oci_load_balancer_backend_set.routes[each.key].name
+}
+
+#####################
 # Private Load Balancer
 #####################
 

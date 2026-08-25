@@ -36,3 +36,8 @@ output "instance_shapes" {
   description = "Instance shapes by pool"
   value       = { for k, v in var.instance_shapes : k => v.shape }
 }
+
+output "data_volume_ocids" {
+  description = "Dedicated block volume OCIDs by pool"
+  value       = { for k, vol in oci_core_volume.app_data : k => vol.id }
+}
