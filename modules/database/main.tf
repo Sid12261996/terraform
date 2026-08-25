@@ -5,6 +5,28 @@
 # Inputs
 #####################
 
+# Admin password fallback for Autonomous Databases when not supplied
+# (12-30 chars with upper/lower/numeric per OCI password policy).
+resource "random_password" "atp_admin" {
+  count = var.create_atp && var.atp_config.admin_password == "" ? 1 : 0
+
+  length      = 24
+  special     = false
+  min_upper   = 2
+  min_lower   = 2
+  min_numeric = 2
+}
+
+resource "random_password" "adw_admin" {
+  count = var.create_adw && var.adw_config.admin_password == "" ? 1 : 0
+
+  length      = 24
+  special     = false
+  min_upper   = 2
+  min_lower   = 2
+  min_numeric = 2
+}
+
 #####################
 # Autonomous Transaction Processing
 #####################
@@ -15,7 +37,7 @@ resource "oci_database_autonomous_database" "atp" {
   compartment_id = var.compartment_ocid
   display_name   = var.atp_config.display_name
   db_name        = var.atp_config.db_name
-  admin_password = var.atp_config.admin_password
+  admin_password = var.atp_config.admin_password != "" ? var.atp_config.admin_password : random_password.atp_admin[0].result
 
   cpu_core_count           = var.atp_config.cpu_core_count
   data_storage_size_in_tbs = var.atp_config.data_storage_size_in_tbs
@@ -48,7 +70,7 @@ resource "oci_database_autonomous_database" "adw" {
   compartment_id = var.compartment_ocid
   display_name   = var.adw_config.display_name
   db_name        = var.adw_config.db_name
-  admin_password = var.adw_config.admin_password
+  admin_password = var.adw_config.admin_password != "" ? var.adw_config.admin_password : random_password.adw_admin[0].result
 
   cpu_core_count           = var.adw_config.cpu_core_count
   data_storage_size_in_tbs = var.adw_config.data_storage_size_in_tbs

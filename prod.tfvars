@@ -66,7 +66,7 @@ create_atp = true
 atp_config = {
   display_name             = "prod-atp"
   db_name                  = "PRODATP"
-  admin_password           = "" # Set via TF_VAR_atp_admin_password (use secret manager in prod)
+  admin_password           = "" # Empty = Terraform generates one (see database module output generated_admin_passwords); or set explicitly here
   cpu_core_count           = 4
   data_storage_size_in_tbs = 2
   is_auto_scaling_enabled  = true

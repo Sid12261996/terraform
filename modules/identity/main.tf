@@ -66,16 +66,20 @@ resource "oci_identity_policy" "admin_policies" {
   name           = "policy-${each.key}"
   description    = "Policy for ${each.key} group"
 
-  statements = [
-    "Allow group ${each.key} to manage all-resources in compartment ${oci_identity_compartment.environment.name}",
-    "Allow group ${each.key} to manage all-resources in compartment ${oci_identity_compartment.environment.name}:${each.key}",
-    # Allow access to functional compartments
-    "Allow group ${each.key} to manage all-resources in compartment ${oci_identity_compartment.environment.name}:network",
-    "Allow group ${each.key} to manage all-resources in compartment ${oci_identity_compartment.environment.name}:compute",
-    "Allow group ${each.key} to manage all-resources in compartment ${oci_identity_compartment.environment.name}:database",
-    "Allow group ${each.key} to manage all-resources in compartment ${oci_identity_compartment.environment.name}:identity",
-    "Allow group ${each.key} to manage all-resources in compartment ${oci_identity_compartment.environment.name}:lb"
-  ]
+  # Reference functional compartments by OCID: name-path references
+  # ("env:sub") create no Terraform dependency and race compartment
+  # creation, failing with "does not exist or is not part of the policy
+  # compartment subtree". OCID references also cover newly created
+  # compartments that IAM cannot yet resolve by name.
+  statements = concat(
+    [
+      "Allow group ${each.key} to manage all-resources in compartment ${oci_identity_compartment.environment.name}"
+    ],
+    [
+      for ocid in compact(each.value) :
+      "Allow group ${each.key} to manage all-resources in compartment id ${ocid}"
+    ]
+  )
 
   freeform_tags = var.common_tags
 }
@@ -88,15 +92,22 @@ resource "oci_identity_policy" "instance_principals" {
   name           = "policy-instance-principals"
   description    = "Policy for instance principals to access resources"
 
-  statements = [
-    "Allow dynamic-group instance-principals to read compartments in tenancy",
-    "Allow dynamic-group instance-principals to read instance in compartment ${oci_identity_compartment.environment.name}:compute",
-    "Allow dynamic-group instance-principals to read vcn in compartment ${oci_identity_compartment.environment.name}:network",
-    "Allow dynamic-group instance-principals to read subnet in compartment ${oci_identity_compartment.environment.name}:network",
-    "Allow dynamic-group instance-principals to read load-balancer in compartment ${oci_identity_compartment.environment.name}:lb",
-    "Allow dynamic-group instance-principals to read autonomous-database in compartment ${oci_identity_compartment.environment.name}:database",
-    "Allow dynamic-group instance-principals to read db-system in compartment ${oci_identity_compartment.environment.name}:database"
-  ]
+  # Reference functional compartments by OCID so Terraform serializes
+  # compartment creation before this policy (name-path references race
+  # compartment creation and fail with 400-InvalidParameter).
+  statements = concat(
+    ["Allow dynamic-group instance-principals to read compartments in tenancy"],
+    [
+      for pair in [
+        { resource = "instance", key = "compute" },
+        { resource = "vcn", key = "network" },
+        { resource = "subnet", key = "network" },
+        { resource = "load-balancer", key = "lb" },
+        { resource = "autonomous-database", key = "database" },
+        { resource = "db-system", key = "database" }
+      ] : "Allow dynamic-group instance-principals to read ${pair.resource} in compartment id ${oci_identity_compartment.functional[pair.key].id}"
+    ]
+  )
 
   freeform_tags = var.common_tags
 }
