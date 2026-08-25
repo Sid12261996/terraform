@@ -254,9 +254,10 @@ jobs:
           # Skipped checks:
           # - CKV_OCI_17: stateful ingress rules are intentional for app traffic
           #   (stateless rules drop return packets and require symmetric egress rules)
-          # - CKV_OCI_9: CMK encryption requires a pre-provisioned Vault master key;
-          #   tracked as follow-up infrastructure work
-          skip_check: CKV_OCI_1,CKV_OCI_2,CKV_OCI_9,CKV_OCI_17
+          # - CKV_OCI_9 / CKV_OCI_3: CMK encryption of boot/block volumes requires a
+          #   pre-provisioned Vault master key; volumes are encrypted at rest with
+          #   Oracle-managed keys by default. Tracked as follow-up infrastructure work.
+          skip_check: CKV_OCI_1,CKV_OCI_2,CKV_OCI_3,CKV_OCI_9,CKV_OCI_17
           output_format: sarif
           output_file_path: checkov-results.sarif
 
