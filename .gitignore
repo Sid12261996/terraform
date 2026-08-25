@@ -1,0 +1,41 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfplan.*
+.tfplan.hcl
+
+# Provider
+.terraform/
+.terraform.lock.hcl
+
+# OCI
+~/.oci/
+*.pem
+*.key
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temp
+*.tmp
+*.temp
+
+# Backup
+*.bak
+*~
+
+# Environment files with secrets
+*.tfvars.local
+*.tfvars.secret

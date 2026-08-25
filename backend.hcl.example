@@ -1,0 +1,23 @@
+# Terraform Backend Configuration for OCI Object Storage
+# 
+# Usage:
+#   terraform init -backend-config=backend.hcl
+#
+# Or set via environment variables:
+#   export TF_VAR_oci_region=us-ashburn-1
+#   export TF_VAR_state_bucket_name=terraform-state
+#   export TF_VAR_state_bucket_namespace=mynamespace
+#   terraform init
+
+bucket_name     = "terraform-state"
+namespace       = "my-namespace"
+region          = "us-ashburn-1"
+object_name     = "terraform.tfstate"
+
+# State locking via Autonomous Database
+# Requires: create_state_lock_table = true in state-backend module
+# lock_table_name = "terraform_locks"
+# lock_table_ocid = "ocid1.autonomousdatabase.oc1..xxxxx"
+
+# Encryption
+# encryption_enabled = true

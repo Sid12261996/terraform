@@ -1,0 +1,290 @@
+# GitHub Actions Workflow: Terraform Apply
+# Runs on merge to main branch
+# Applies Terraform changes to target environment
+# Supports manual approval for production
+
+name: Terraform Apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.tf'
+      - '**.tfvars'
+      - '!README.md'
+      - '!docs/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        type: choice
+        required: true
+        options:
+          - staging
+          - prod
+      approve:
+        description: 'Approve production deployment'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+env:
+  TF_VERSION: "1.6.6"
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  # Determine target environment
+  determine-environment:
+    name: Determine Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      requires_approval: ${{ steps.set-env.outputs.requires_approval }}
+    steps:
+      - name: Set environment
+        id: set-env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+            if [ "${{ github.event.inputs.environment }}" = "prod" ]; then
+              echo "requires_approval=true" >> $GITHUB_OUTPUT
+            else
+              echo "requires_approval=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            # Main branch push -> staging
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "requires_approval=false" >> $GITHUB_OUTPUT
+          fi
+
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    needs: determine-environment
+    environment: ${{ needs.determine-environment.outputs.environment }}
+    concurrency:
+      group: terraform-apply-${{ needs.determine-environment.outputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Configure OCI Authentication
+        run: |
+          if [ -n "${{ secrets.OCI_USER_OCID }}" ]; then
+            echo "Using API key authentication"
+            cat > ~/.oci/config <<EOF
+[DEFAULT]
+user=${{ secrets.OCI_USER_OCID }}
+fingerprint=${{ secrets.OCI_FINGERPRINT }}
+tenancy=${{ secrets.OCI_TENANCY_OCID }}
+region=${{ vars.OCI_REGION }}
+key_file=~/.oci/oci_api_key.pem
+EOF
+            echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+            chmod 600 ~/.oci/oci_api_key.pem
+          else
+            echo "Using instance principal authentication"
+          fi
+
+      - name: Initialize Terraform with Backend
+        run: |
+          terraform init \
+            -backend-config="bucket_name=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="namespace=${{ vars.TF_STATE_NAMESPACE }}" \
+            -backend-config="region=${{ vars.OCI_REGION }}" \
+            -backend-config="object_name=terraform.tfstate"
+        env:
+          OCI_REGION: ${{ vars.OCI_REGION }}
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          ENV_FILE="${{ needs.determine-environment.outputs.environment }}.tfvars"
+          terraform plan \
+            -var-file="$ENV_FILE" \
+            -var="oci_region=${{ vars.OCI_REGION }}" \
+            -var="oci_tenancy_ocid=${{ secrets.OCI_TENANCY_OCID }}" \
+            -var="oci_user_ocid=${{ secrets.OCI_USER_OCID }}" \
+            -var="oci_fingerprint=${{ secrets.OCI_FINGERPRINT }}" \
+            -var="oci_private_key_path=~/.oci/oci_api_key.pem" \
+            -out=tfplan.binary
+        continue-on-error: true
+
+      - name: Convert Plan to JSON
+        if: steps.plan.outcome == 'success'
+        run: |
+          terraform show -json tfplan.binary > tfplan.json
+
+      - name: Generate Plan Summary
+        if: steps.plan.outcome == 'success'
+        id: plan-summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = JSON.parse(fs.readFileSync('tfplan.json', 'utf8'));
+            
+            let adds = 0, changes = 0, destroys = 0;
+            if (plan.resource_changes) {
+              for (const rc of plan.resource_changes) {
+                if (rc.change.actions.includes('create')) adds++;
+                else if (rc.change.actions.includes('update')) changes++;
+                else if (rc.change.actions.includes('delete')) destroys++;
+              }
+            }
+            
+            let summary = `## Terraform Plan for ${{ needs.determine-environment.outputs.environment }}\n\n`;
+            summary += `| Action | Count |\n|--------|-------|\n`;
+            summary += `| Create | ${adds} |\n`;
+            summary += `| Update | ${changes} |\n`;
+            summary += `| Destroy | ${destroys} |\n\n`;
+            
+            if (adds + changes + destroys === 0) {
+              summary += "✅ No changes. Infrastructure is up to date.";
+            } else {
+              summary += `**Total: ${adds + changes + destroys} changes**\n\n`;
+              if (needs.determine-environment.outputs.environment == 'prod') {
+                summary += "⚠️ **PRODUCTION DEPLOYMENT** - Review carefully!";
+              }
+            }
+            
+            core.setOutput('summary', summary);
+            core.setOutput('has-changes', (adds + changes + destroys > 0).toString());
+
+      - name: Upload Plan Artifact
+        if: steps.plan.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ needs.determine-environment.outputs.environment }}-${{ github.sha }}
+          path: |
+            tfplan.binary
+            tfplan.json
+          retention-days: 90
+
+  # Manual approval gate for production
+  approval:
+    name: Manual Approval (Production)
+    runs-on: ubuntu-latest
+    needs: [determine-environment, plan]
+    if: needs.determine-environment.outputs.requires_approval == 'true' && needs.plan.outputs.has-changes == 'true'
+    environment: production-approval
+    steps:
+      - name: Wait for manual approval
+        run: |
+          echo "Production deployment requires manual approval."
+          echo "Review the plan summary in the workflow run."
+          echo "Click 'Review deployments' -> 'Approve' to continue."
+
+  apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: [determine-environment, plan, approval]
+    if: needs.plan.outputs.has-changes == 'true' && (needs.determine-environment.outputs.requires_approval == 'false' || needs.approval.result == 'success')
+    environment: ${{ needs.determine-environment.outputs.environment }}
+    concurrency:
+      group: terraform-apply-${{ needs.determine-environment.outputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Configure OCI Authentication
+        run: |
+          if [ -n "${{ secrets.OCI_USER_OCID }}" ]; then
+            echo "Using API key authentication"
+            cat > ~/.oci/config <<EOF
+[DEFAULT]
+user=${{ secrets.OCI_USER_OCID }}
+fingerprint=${{ secrets.OCI_FINGERPRINT }}
+tenancy=${{ secrets.OCI_TENANCY_OCID }}
+region=${{ vars.OCI_REGION }}
+key_file=~/.oci/oci_api_key.pem
+EOF
+            echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+            chmod 600 ~/.oci/oci_api_key.pem
+          else
+            echo "Using instance principal authentication"
+          fi
+
+      - name: Initialize Terraform with Backend
+        run: |
+          terraform init \
+            -backend-config="bucket_name=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="namespace=${{ vars.TF_STATE_NAMESPACE }}" \
+            -backend-config="region=${{ vars.OCI_REGION }}" \
+            -backend-config="object_name=terraform.tfstate"
+        env:
+          OCI_REGION: ${{ vars.OCI_REGION }}
+
+      - name: Terraform Apply
+        id: apply
+        run: |
+          terraform apply -auto-approve tfplan.binary
+
+      - name: Generate Apply Summary
+        if: success()
+        id: apply-summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const summary = `## Terraform Apply Complete\n\n**Environment:** ${{ needs.determine-environment.outputs.environment }}\n**Commit:** ${{ github.sha }}\n**Status:** ✅ Success\n\n---\n*Deployed by GitHub Actions on ${new Date().toISOString()}*`;
+            core.setOutput('summary', summary);
+
+      - name: Post Apply Summary to Workflow
+        if: success()
+        run: |
+          echo "${{ steps.apply-summary.outputs.summary }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "::error::Terraform apply failed for ${{ needs.determine-environment.outputs.environment }}. Check logs above."
+          echo "## Terraform Apply Failed" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ needs.determine-environment.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ❌ Failed" >> $GITHUB_STEP_SUMMARY
+          echo "**Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Create Deployment Record (Optional)
+        if: success() && needs.determine-environment.outputs.environment == 'prod'
+        run: |
+          # Tag the commit for production deployment tracking
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git tag -a "deploy/prod/${{ github.sha }}" -m "Production deployment ${{ github.sha }}"
+          git push origin "deploy/prod/${{ github.sha }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Cleanup old plans
+  cleanup:
+    name: Cleanup Old Artifacts
+    runs-on: ubuntu-latest
+    needs: apply
+    if: always()
+    steps:
+      - name: Delete old workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          retain_days: 30
+          keep_minimum_runs: 10
