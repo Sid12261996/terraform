@@ -41,8 +41,9 @@ resource "oci_core_instance_configuration" "instance_configs" {
       }
 
       source_details {
-        source_type = var.instance_images[each.key] != "" ? "image" : "image"
-        image_id    = var.instance_images[each.key] != "" ? var.instance_images[each.key] : data.oci_core_images.oracle_linux.images[0].id
+        source_type = "image"
+        # Use a custom image when provided per pool, otherwise the latest Oracle Linux image
+        image_id = try(var.instance_images[each.key], "") != "" ? var.instance_images[each.key] : data.oci_core_images.oracle_linux.images[0].id
       }
 
       create_vnic_details {

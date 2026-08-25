@@ -470,8 +470,8 @@ variable "atp_config" {
     is_auto_scaling_enabled  = bool
     is_free_tier             = bool
     license_model            = string
-    nsg_ids                  = list(string)
-    subnet_id                = string
+    nsg_ids                  = optional(list(string), [])
+    subnet_id                = optional(string, "")
     private_endpoint_label   = optional(string)
     private_endpoint_ip      = optional(string)
   })
@@ -508,8 +508,8 @@ variable "adw_config" {
     is_auto_scaling_enabled  = bool
     is_free_tier             = bool
     license_model            = string
-    nsg_ids                  = list(string)
-    subnet_id                = string
+    nsg_ids                  = optional(list(string), [])
+    subnet_id                = optional(string, "")
     private_endpoint_label   = optional(string)
     private_endpoint_ip      = optional(string)
   })

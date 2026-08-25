@@ -48,39 +48,47 @@ resource "oci_core_nat_gateway" "nat" {
 #####################
 
 # "All <region> Services in Oracle Services Network" service
-data "oci_core_services" "all_osn" {
-  filter {
-    name   = "name"
-    values = ["All .* Services in Oracle Services Network"]
-    regex  = true
-  }
-}
-
-resource "oci_core_service_gateway" "sgw" {
-  count          = var.create_service_gateway ? 1 : 0
-  compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.main.id
-  display_name   = "${var.vcn_display_name}-sgw"
-
-  services {
-    service_id = data.oci_core_services.all_osn.services[0].id
-  }
-
-  freeform_tags = var.common_tags
-}
+data "oci_core_services" "all_osn" {}
 
 #####################
 # Route Tables
 #####################
 
 locals {
-  # Route to Oracle Services Network via the Service Gateway
+  # The Oracle Services Network entry covering all services for this region.
+  # Null when the API returns nothing, which disables service-gateway
+  # dependent resources instead of failing plan.
+  osn_service = one([
+    for s in data.oci_core_services.all_osn.services :
+    {
+      id   = s.id
+      name = s.name
+    } if can(regex("All .* Services [Ii]n Oracle Services Network", s.name))
+  ])
+
+  create_sgw = var.create_service_gateway && local.osn_service != null ? true : false
+
+  # Route to Oracle Services Network via the Service Gateway.
+  # The destination must be the service name exactly as returned by the API.
   sgw_route_rule = {
-    network_entity_id = oci_core_service_gateway.sgw[0].id
-    destination       = "All ${var.oci_region} Services in Oracle Services Network"
+    network_entity_id = local.create_sgw ? oci_core_service_gateway.sgw[0].id : ""
+    destination       = local.osn_service != null ? local.osn_service.name : ""
     destination_type  = "SERVICE_CIDR_BLOCK"
     description       = "Service Gateway"
   }
+}
+
+resource "oci_core_service_gateway" "sgw" {
+  count          = local.create_sgw ? 1 : 0
+  compartment_id = var.compartment_ocid
+  vcn_id         = oci_core_vcn.main.id
+  display_name   = "${var.vcn_display_name}-sgw"
+
+  services {
+    service_id = local.osn_service.id
+  }
+
+  freeform_tags = var.common_tags
 }
 
 # Public route table (with IGW)
@@ -97,7 +105,7 @@ resource "oci_core_route_table" "public" {
         destination_type  = "CIDR_BLOCK"
         description       = "Default route via Internet Gateway"
       }],
-      var.create_service_gateway ? [local.sgw_route_rule] : []
+      local.create_sgw ? [local.sgw_route_rule] : []
     )
     iterator = rule
     content {
@@ -125,7 +133,7 @@ resource "oci_core_route_table" "private" {
         destination_type  = "CIDR_BLOCK"
         description       = "Default route via NAT Gateway"
       }] : [],
-      var.create_service_gateway ? [local.sgw_route_rule] : []
+      local.create_sgw ? [local.sgw_route_rule] : []
     )
     iterator = rule
     content {
