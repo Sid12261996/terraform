@@ -70,7 +70,8 @@ resource "oci_core_instance_configuration" "instance_configs" {
     instance_type = "compute"
 
     launch_details {
-      shape = each.value.shape
+      compartment_id = var.compartment_ocid
+      shape          = each.value.shape
 
       shape_config {
         ocpus         = each.value.shape_config_ocpus != null ? each.value.shape_config_ocpus : each.value.ocpus
@@ -160,6 +161,7 @@ resource "oci_core_instance" "instances" {
   launch_options {
     # CKV_OCI_4: encrypt boot volume traffic in transit
     is_pv_encryption_in_transit_enabled = true
+    network_type                        = "PARAVIRTUALIZED"
   }
 
   instance_options {
