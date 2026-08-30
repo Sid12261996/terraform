@@ -226,14 +226,32 @@ resource "oci_load_balancer_listener" "private_http" {
   default_backend_set_name = oci_load_balancer_backend_set.private[0].name
 }
 
+resource "oci_load_balancer_backend_set" "private_tcp" {
+  count = var.create_private_lb ? 1 : 0
+
+  load_balancer_id = oci_load_balancer_load_balancer.private[0].id
+  name             = "private-tcp-backend-set"
+  policy           = "LEAST_CONNECTIONS"
+
+  health_checker {
+    protocol          = "TCP"
+    port              = 3306
+    interval_ms       = var.health_check_interval * 1000
+    timeout_in_millis = 5000
+    retries           = 3
+  }
+}
+
 resource "oci_load_balancer_listener" "private_tcp" {
   count = var.create_private_lb ? 1 : 0
 
-  load_balancer_id         = oci_load_balancer_load_balancer.private[0].id
-  name                     = "tcp-listener"
-  protocol                 = "TCP"
-  port                     = 3306 # Database port
-  default_backend_set_name = oci_load_balancer_backend_set.private[0].name
+  load_balancer_id = oci_load_balancer_load_balancer.private[0].id
+  name             = "tcp-listener"
+  protocol         = "TCP"
+  port             = 3306 # Database port
+  # A backend set's listeners must share one protocol, so the TCP
+  # listener needs its own backend set separate from the HTTP one.
+  default_backend_set_name = oci_load_balancer_backend_set.private_tcp[0].name
 }
 
 #####################
