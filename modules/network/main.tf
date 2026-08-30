@@ -80,16 +80,23 @@ locals {
     description       = "Service Gateway"
   }
 
-  # Subnet maps in the tfvars files are keyed by short AD names ("AD-1"),
-  # but the CreateSubnet API requires the full availability-domain name
-  # (e.g. "AP-HYDERABAD-1-AD-1"). Map short keys to the region's real AD
-  # names; keys that are already full AD names pass through unchanged.
+  # Subnet maps in the tfvars files are keyed by short AD names ("AD-1",
+  # "AD-2", "AD-3"), but the CreateSubnet API requires the full
+  # availability-domain name (e.g. "AP-HYDERABAD-1-AD-1"). Some regions
+  # (e.g. ap-hyderabad-1) only have a single real AD, so tfvars keys
+  # beyond the number of ADs the region actually has are wrapped back
+  # onto the available ADs via modulo instead of failing. Keys that are
+  # already full AD names pass through unchanged.
   ad_names_by_key = merge(
     {
       for ad in var.availability_domains :
-      "AD-${regex("([0-9]+)$", ad.name)[0]}" => ad.name
+      ad.name => ad.name
     },
-    { for ad in var.availability_domains : ad.name => ad.name }
+    {
+      for key in distinct(concat(keys(var.public_subnet_cidrs), keys(var.private_subnet_cidrs))) :
+      key => var.availability_domains[(tonumber(regex("([0-9]+)$", key)[0]) - 1) % length(var.availability_domains)].name
+      if can(regex("([0-9]+)$", key)) && length(var.availability_domains) > 0
+    }
   )
 }
 
