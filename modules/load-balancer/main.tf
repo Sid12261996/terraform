@@ -19,7 +19,11 @@ resource "oci_load_balancer_load_balancer" "public" {
     minimum_bandwidth_in_mbps = var.public_lb_min_bw
     maximum_bandwidth_in_mbps = var.public_lb_max_bw
   }
-  subnet_ids    = values(var.public_subnet_ocids)
+  # OCI load balancers accept at most 2 subnet_ids (in different ADs);
+  # passing one per AD-keyed subnet map entry over-subscribes that limit
+  # in multi-AD regions and is rejected outright in single-AD regions,
+  # so just use one subnet.
+  subnet_ids    = [values(var.public_subnet_ocids)[0]]
   freeform_tags = var.common_tags
 }
 
@@ -173,7 +177,8 @@ resource "oci_load_balancer_load_balancer" "private" {
     minimum_bandwidth_in_mbps = var.private_lb_min_bw
     maximum_bandwidth_in_mbps = var.private_lb_max_bw
   }
-  subnet_ids    = values(var.private_subnet_ocids)
+  # Private load balancers require exactly one subnet.
+  subnet_ids    = [values(var.private_subnet_ocids)[0]]
   is_private    = true
   freeform_tags = var.common_tags
 }
