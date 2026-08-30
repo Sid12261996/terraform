@@ -77,7 +77,10 @@ resource "oci_database_autonomous_database" "lock_db" {
   db_name        = "TFSTATE"
   admin_password = random_password.lock_db_password.result
 
-  cpu_core_count           = 1
+  # ECPU compute model is the only one accepted for new Autonomous
+  # Databases; Always Free tier allows 2 ECPU.
+  compute_model            = "ECPU"
+  compute_count            = 2
   data_storage_size_in_tbs = 1
   is_auto_scaling_enabled  = false
   is_free_tier             = true
