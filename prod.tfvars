@@ -30,47 +30,44 @@ private_subnet_cidrs = {
 }
 
 #####################
-# Compute - Production sizes
+# Compute - the Immich app instance below (apps_immich) is the only
+# workload; no separate generic instance pool is needed, and this
+# tenancy's Always-Free Ampere allowance (4 OCPU/24GB total) is already
+# fully spent on that one instance.
 #####################
-instance_shapes = {
-  "app-server" = {
-    shape         = "VM.Standard.E4.Flex"
-    ocpus         = 4
-    memory_in_gbs = 32
-  }
-}
+instance_shapes = {}
 
-instance_counts = {
-  "app-server" = 3
-}
+instance_counts = {}
 
 ssh_public_keys = [
   # "ssh-rsa AAAAB3NzaC1yc2E... user@host"
 ]
 
 #####################
-# Load Balancer - Full capacity for prod
+# Load Balancer - sized to the Always Free flexible-LB allowance
+# (a single LB at 10 Mbps). Immich's public route rides the same LB;
+# nothing sends traffic to a private LB, so it stays disabled.
 #####################
 create_public_lb = true
-public_lb_min_bw = 100
-public_lb_max_bw = 8000
+public_lb_min_bw = 10
+public_lb_max_bw = 100
 
-create_private_lb = true
-private_lb_min_bw = 100
-private_lb_max_bw = 4000
+create_private_lb = false
+private_lb_min_bw = 10
+private_lb_max_bw = 10
 
 #####################
-# Database - Production config
+# Database - Always Free Autonomous Database (2 ECPU, 20GB storage)
 #####################
 create_atp = true
 atp_config = {
   display_name             = "prod-atp"
   db_name                  = "PRODATP"
   admin_password           = "" # Empty = Terraform generates one (see database module output generated_admin_passwords); or set explicitly here
-  cpu_core_count           = 4
-  data_storage_size_in_tbs = 2
-  is_auto_scaling_enabled  = true
-  is_free_tier             = false
+  cpu_core_count           = 1
+  data_storage_size_in_tbs = 1
+  is_auto_scaling_enabled  = false
+  is_free_tier             = true
   license_model            = "LICENSE_INCLUDED"
 }
 
