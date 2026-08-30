@@ -39,7 +39,11 @@ resource "oci_database_autonomous_database" "atp" {
   db_name        = var.atp_config.db_name
   admin_password = var.atp_config.admin_password != "" ? var.atp_config.admin_password : random_password.atp_admin[0].result
 
-  cpu_core_count           = var.atp_config.cpu_core_count
+  # OCI no longer accepts the OCPU compute model for new Autonomous
+  # Databases; 1 OCPU == 2 ECPU, so convert the configured core count.
+  # Provider 5.x exposes this as compute_count (not ecpu_count).
+  compute_model            = "ECPU"
+  compute_count            = var.atp_config.cpu_core_count * 2
   data_storage_size_in_tbs = var.atp_config.data_storage_size_in_tbs
   is_auto_scaling_enabled  = var.atp_config.is_auto_scaling_enabled
   is_free_tier             = var.atp_config.is_free_tier
@@ -72,7 +76,8 @@ resource "oci_database_autonomous_database" "adw" {
   db_name        = var.adw_config.db_name
   admin_password = var.adw_config.admin_password != "" ? var.adw_config.admin_password : random_password.adw_admin[0].result
 
-  cpu_core_count           = var.adw_config.cpu_core_count
+  compute_model            = "ECPU"
+  compute_count            = var.adw_config.cpu_core_count * 2
   data_storage_size_in_tbs = var.adw_config.data_storage_size_in_tbs
   is_auto_scaling_enabled  = var.adw_config.is_auto_scaling_enabled
   is_free_tier             = var.adw_config.is_free_tier

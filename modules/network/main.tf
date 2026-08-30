@@ -79,6 +79,18 @@ locals {
     destination_type  = "SERVICE_CIDR_BLOCK"
     description       = "Service Gateway"
   }
+
+  # Subnet maps in the tfvars files are keyed by short AD names ("AD-1"),
+  # but the CreateSubnet API requires the full availability-domain name
+  # (e.g. "AP-HYDERABAD-1-AD-1"). Map short keys to the region's real AD
+  # names; keys that are already full AD names pass through unchanged.
+  ad_names_by_key = merge(
+    {
+      for ad in var.availability_domains :
+      "AD-${regex("([0-9]+)$", ad.name)[0]}" => ad.name
+    },
+    { for ad in var.availability_domains : ad.name => ad.name }
+  )
 }
 
 resource "oci_core_service_gateway" "sgw" {
@@ -100,16 +112,18 @@ resource "oci_core_route_table" "public" {
   vcn_id         = oci_core_vcn.main.id
   display_name   = "${var.vcn_display_name}-public-rt"
 
+  # NOTE: OCI forbids an Internet Gateway target together with a Service
+  # Gateway target for All Services in the same route table, so the SGW
+  # route lives only in the private route table below.
   dynamic "route_rules" {
-    for_each = concat([
+    for_each = [
       {
         network_entity_id = oci_core_internet_gateway.igw[0].id
         destination       = "0.0.0.0/0"
         destination_type  = "CIDR_BLOCK"
         description       = "Default route via Internet Gateway"
-      }],
-      local.create_sgw ? [local.sgw_route_rule] : []
-    )
+      }
+    ]
     iterator = rule
     content {
       network_entity_id = rule.value.network_entity_id
@@ -502,12 +516,14 @@ resource "oci_core_network_security_group_security_rule" "lb_egress" {
 resource "oci_core_subnet" "public" {
   for_each = var.public_subnet_cidrs
 
-  compartment_id             = var.compartment_ocid
-  vcn_id                     = oci_core_vcn.main.id
-  cidr_block                 = each.value
-  display_name               = "${var.vcn_display_name}-public-${each.key}"
-  dns_label                  = "public${each.key}"
-  availability_domain        = each.key
+  compartment_id = var.compartment_ocid
+  vcn_id         = oci_core_vcn.main.id
+  cidr_block     = each.value
+  display_name   = "${var.vcn_display_name}-public-${each.key}"
+  # DNS labels are alphanumeric only, so strip the "AD-" key down to its
+  # trailing AD number (e.g. "AD-1" -> "public1").
+  dns_label                  = "public${regex("([0-9]+)$", each.key)[0]}"
+  availability_domain        = lookup(local.ad_names_by_key, each.key, each.key)
   route_table_id             = oci_core_route_table.public.id
   security_list_ids          = [oci_core_security_list.public.id]
   dhcp_options_id            = oci_core_dhcp_options.main.id
@@ -523,8 +539,8 @@ resource "oci_core_subnet" "private" {
   vcn_id                     = oci_core_vcn.main.id
   cidr_block                 = each.value
   display_name               = "${var.vcn_display_name}-private-${each.key}"
-  dns_label                  = "private${each.key}"
-  availability_domain        = each.key
+  dns_label                  = "private${regex("([0-9]+)$", each.key)[0]}"
+  availability_domain        = lookup(local.ad_names_by_key, each.key, each.key)
   route_table_id             = oci_core_route_table.private.id
   security_list_ids          = [oci_core_security_list.public.id]
   dhcp_options_id            = oci_core_dhcp_options.main.id
