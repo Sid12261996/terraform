@@ -25,6 +25,13 @@ resource "oci_load_balancer_load_balancer" "public" {
   # so just use one subnet.
   subnet_ids    = [values(var.public_subnet_ocids)[0]]
   freeform_tags = var.common_tags
+
+  # A healthy LB provisions in a couple of minutes; a quota-blocked one
+  # otherwise leaves Terraform polling a stuck work request for the
+  # provider's default (much longer) timeout before reporting failure.
+  timeouts {
+    create = "15m"
+  }
 }
 
 resource "oci_load_balancer_backend_set" "public" {
@@ -181,6 +188,10 @@ resource "oci_load_balancer_load_balancer" "private" {
   subnet_ids    = [values(var.private_subnet_ocids)[0]]
   is_private    = true
   freeform_tags = var.common_tags
+
+  timeouts {
+    create = "15m"
+  }
 }
 
 resource "oci_load_balancer_backend_set" "private" {

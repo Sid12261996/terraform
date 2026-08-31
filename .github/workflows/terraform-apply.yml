@@ -65,6 +65,7 @@ jobs:
   plan:
     name: Terraform Plan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: determine-environment
     outputs:
       has-changes: ${{ steps.plan-summary.outputs.has-changes }}
@@ -217,6 +218,7 @@ jobs:
   apply:
     name: Terraform Apply
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [determine-environment, plan, approval]
     if: needs.plan.outputs.has-changes == 'true' && (needs.determine-environment.outputs.requires_approval == 'false' || needs.approval.result == 'success')
     environment: ${{ needs.determine-environment.outputs.environment }}
