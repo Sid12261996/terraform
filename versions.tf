@@ -20,21 +20,29 @@ terraform {
     }
   }
 
-  # Remote state backend — DISABLED during bootstrap.
+  # Remote state, via OCI Object Storage's S3-compatible API.
   #
-  # The state bucket is provisioned by module.state_backend in this same
-  # configuration, so remote state cannot be used until after the first
-  # apply (chicken-and-egg). Until then, state stays local.
+  # The bucket ("terraform-state-prod") was provisioned by
+  # module.state_backend during bootstrap and already exists in the
+  # tenancy. Every value here is filled in at `terraform init` time with
+  # -backend-config (see the "Initialize Terraform" steps in
+  # .github/workflows/terraform-*.yml) because backend blocks cannot
+  # reference variables. Without this, every CI run starts from an empty
+  # local state, tries to recreate every resource from scratch, and
+  # collides with everything a previous run already created in OCI —
+  # which is why "AlreadyExists" and resource-quota errors kept
+  # reappearing across runs.
   #
-  # To enable remote state once the bucket exists:
-  #   1. Uncomment the block below.
-  #   2. Set TF_STATE_BUCKET / OCI_REGION repo variables.
-  #   3. Restore the backend flags in the workflow "Initialize Terraform"
-  #      steps (they are kept ready for this).
-  #
-  # backend "oss" {
-  #   bucket = "<tf-state-bucket>"
-  #   key    = "terraform.tfstate"
-  #   region = "<region>"
-  # }
+  # OCI's S3-compatible endpoint requires a Customer Secret Key (Identity
+  # > My Profile > Customer Secret Keys), which is a different credential
+  # from the API signing key used by the oci provider elsewhere.
+  backend "s3" {
+    key                         = "terraform.tfstate"
+    skip_region_validation      = true
+    skip_credentials_validation = true
+    skip_requesting_account_id  = true
+    skip_metadata_api_check     = true
+    skip_s3_checksum            = true
+    force_path_style            = true
+  }
 }
