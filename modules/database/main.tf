@@ -62,6 +62,13 @@ resource "oci_database_autonomous_database" "atp" {
   whitelisted_ips                                = []
 
   freeform_tags = var.common_tags
+
+  # A healthy ATP provisions in well under this; a quota-blocked one
+  # otherwise leaves Terraform polling a stuck work request for the
+  # provider's default (much longer) timeout before reporting failure.
+  timeouts {
+    create = "20m"
+  }
 }
 
 #####################
@@ -93,6 +100,10 @@ resource "oci_database_autonomous_database" "adw" {
   private_endpoint_ip    = var.adw_config.private_endpoint_ip
 
   freeform_tags = var.common_tags
+
+  timeouts {
+    create = "20m"
+  }
 }
 
 #####################

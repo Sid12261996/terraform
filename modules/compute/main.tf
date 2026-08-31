@@ -117,6 +117,13 @@ resource "oci_core_instance_pool" "instance_pools" {
   }
 
   freeform_tags = var.common_tags
+
+  # A healthy pool scales in a couple of minutes; a quota-blocked one
+  # otherwise leaves Terraform polling a stuck work request for the
+  # provider's default (much longer) timeout before reporting failure.
+  timeouts {
+    create = "15m"
+  }
 }
 
 # Instance members of each pool (used by outputs to report OCIDs/IPs)
@@ -197,6 +204,10 @@ resource "oci_core_instance" "instances" {
   availability_domain = var.availability_domains[each.value.slot % length(var.availability_domains)].name
 
   freeform_tags = var.common_tags
+
+  timeouts {
+    create = "15m"
+  }
 }
 
 #####################

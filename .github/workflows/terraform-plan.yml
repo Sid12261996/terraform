@@ -79,6 +79,7 @@ jobs:
   plan:
     name: Terraform Plan (Dev)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: validate
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     environment: dev

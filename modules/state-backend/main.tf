@@ -89,6 +89,10 @@ resource "oci_database_autonomous_database" "lock_db" {
   is_dedicated             = false
 
   freeform_tags = var.common_tags
+
+  timeouts {
+    create = "20m"
+  }
 }
 
 # Autonomous Database admin password: 12-30 chars, must include upper,
