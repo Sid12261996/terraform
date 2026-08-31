@@ -119,7 +119,17 @@ jobs:
               -backend-config="access_key=${{ secrets.OCI_S3_ACCESS_KEY }}" \
               -backend-config="secret_key=${{ secrets.OCI_S3_SECRET_KEY }}"
           else
-            terraform init -backend=false
+            # -backend=false only skips backend init, it doesn't give plan/apply
+            # a working backend to read and write state through - versions.tf's
+            # "s3" block still applies and both commands need real state access.
+            # Override it with a local backend instead, so bootstrap runs behave
+            # like they did before the "s3" backend existed.
+            cat > backend_override.tf <<'OVERRIDE'
+          terraform {
+            backend "local" {}
+          }
+          OVERRIDE
+            terraform init
           fi
         env:
           OCI_REGION: ${{ vars.OCI_REGION }}
@@ -260,7 +270,17 @@ jobs:
               -backend-config="access_key=${{ secrets.OCI_S3_ACCESS_KEY }}" \
               -backend-config="secret_key=${{ secrets.OCI_S3_SECRET_KEY }}"
           else
-            terraform init -backend=false
+            # -backend=false only skips backend init, it doesn't give plan/apply
+            # a working backend to read and write state through - versions.tf's
+            # "s3" block still applies and both commands need real state access.
+            # Override it with a local backend instead, so bootstrap runs behave
+            # like they did before the "s3" backend existed.
+            cat > backend_override.tf <<'OVERRIDE'
+          terraform {
+            backend "local" {}
+          }
+          OVERRIDE
+            terraform init
           fi
         env:
           OCI_REGION: ${{ vars.OCI_REGION }}
