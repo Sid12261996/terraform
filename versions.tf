@@ -1,40 +1,36 @@
 terraform {
-  required_version = ">= 1.6.0"
+  required_version = ">= 1.11.0"
 
   required_providers {
     oci = {
       source  = "oracle/oci"
-      version = "~> 5.0"
-    }
-    tls = {
-      source  = "hashicorp/tls"
-      version = "~> 4.0"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.0"
-    }
-    time = {
-      source  = "hashicorp/time"
-      version = "~> 0.9"
+      version = "~> 7.0"
     }
   }
 
-  # Remote state backend — DISABLED during bootstrap.
+  # Remote state on OCI Object Storage via its S3-compatible API.
   #
-  # The state bucket is provisioned by module.state_backend in this same
-  # configuration, so remote state cannot be used until after the first
-  # apply (chicken-and-egg). Until then, state stays local.
+  # This is the single most important part of this configuration. Without it
+  # every CI run starts from an empty state, re-creates every resource, and
+  # leaks the previous run's infrastructure. See docs/state-backend.md for the
+  # one-time bootstrap (bucket + customer secret key).
   #
-  # To enable remote state once the bucket exists:
-  #   1. Uncomment the block below.
-  #   2. Set TF_STATE_BUCKET / OCI_REGION repo variables.
-  #   3. Restore the backend flags in the workflow "Initialize Terraform"
-  #      steps (they are kept ready for this).
-  #
-  # backend "oss" {
-  #   bucket = "<tf-state-bucket>"
-  #   key    = "terraform.tfstate"
-  #   region = "<region>"
-  # }
+  # Values are supplied by `terraform init -backend-config=...` so the same
+  # code works locally and in CI.
+  backend "s3" {
+    key = "immich/terraform.tfstate"
+
+    # OCI Object Storage speaks S3, but not the parts of it that the AWS SDK
+    # assumes are always present.
+    use_path_style              = true
+    skip_credentials_validation = true
+    skip_region_validation      = true
+    skip_requesting_account_id  = true
+    skip_metadata_api_check     = true
+    skip_s3_checksum            = true
+
+    # Native S3 locking: writes a .tflock object next to the state. Removes the
+    # need for DynamoDB (which OCI has no equivalent of).
+    use_lockfile = true
+  }
 }

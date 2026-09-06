@@ -1,41 +1,24 @@
 # Terraform
+.terraform/
+.terraform.lock.hcl.bak
 *.tfstate
 *.tfstate.*
-*.tfplan
-*.tfplan.*
-.tfplan.hcl
+crash.log
+tfplan
+plan.txt
 
-# Provider
-.terraform/
-.terraform.lock.hcl
-
-# OCI
-~/.oci/
+# Backend and credentials - never commit
+backend.auto.hcl
+*.auto.tfvars
 *.pem
-*.key
+.env
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
+# Editors
 .DS_Store
-Thumbs.db
 
-# Logs
-*.log
-logs/
-
-# Temp
-*.tmp
-*.temp
-
-# Backup
-*.bak
-*~
-
-# Environment files with secrets
-*.tfvars.local
-*.tfvars.secret
+# Local agent tooling
+.claude/
+.serena/
+.opencode/
+.hermes/
+.kimi-code/
