@@ -117,8 +117,12 @@ the resource are reported, so run again until `list-orphans.sh` is clean.
 
 ## Troubleshooting
 
-**`Out of host capacity`** — Ampere A1 is heavily contended. It is not a
-configuration error; retry the workflow, or lower `instance_ocpus`.
+**`Out of host capacity`** — Ampere A1 is heavily contended and free
+tenancies are served last. It is not a configuration error, and there is
+nothing to fix: the rest of the stack is already built and in state, and
+the workflow retries three times per run and again every 30 minutes on a
+schedule until a server appears. It can take hours or days. Lowering
+`instance_ocpus` and `instance_memory_gb` improves the odds.
 
 **`LimitExceeded`** — you are asking for more than step 1 reported.
 
