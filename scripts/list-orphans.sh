@@ -16,10 +16,14 @@ mapfile -t COMPARTMENTS < <(
   } | sort -u
 )
 
+# Counts live resources only. OCI keeps terminated ones listable for a while,
+# and counting those makes a clean tenancy look full.
 count() { # service subcommand
   local total=0 n
   for c in "${COMPARTMENTS[@]}"; do
-    n="$(oci $1 list -c "$c" --all --query 'length(data)' 2>/dev/null || echo 0)"
+    n="$(oci $1 list -c "$c" --all \
+      --query 'length(data[?"lifecycle-state"==null || !contains([`TERMINATED`,`TERMINATING`,`DELETED`,`DELETING`,`FAILED`], "lifecycle-state")])' \
+      2>/dev/null || echo 0)"
     [[ "$n" =~ ^[0-9]+$ ]] || n=0
     total=$(( total + n ))
   done
