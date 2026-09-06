@@ -124,3 +124,13 @@ configuration error; retry the workflow, or lower `instance_ocpus`.
 
 **Immich is not responding yet** — first boot pulls several GB of images.
 Watch it: `ssh ubuntu@<ip> 'sudo tail -f /var/log/immich-bootstrap.log'`.
+
+**`NotImplemented: AWS chunked encoding not supported`** — OCI's
+S3-compatible endpoint rejects the trailing checksum the AWS SDK sends by
+default. The workflow disables it with `AWS_REQUEST_CHECKSUM_CALCULATION`
+and `AWS_RESPONSE_CHECKSUM_VALIDATION`; export both as `when_required` if
+you are running Terraform by hand.
+
+**`Error acquiring the state lock`** — a previous run died holding it.
+Check nobody is mid-apply, then
+`terraform force-unlock <id>`.

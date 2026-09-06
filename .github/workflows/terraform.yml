@@ -49,6 +49,12 @@ jobs:
       # Object Storage customer secret key, used only by the S3 state backend.
       AWS_ACCESS_KEY_ID:     ${{ secrets.OCI_S3_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.OCI_S3_SECRET_ACCESS_KEY }}
+      # The AWS SDK defaults to sending a trailing checksum, which forces
+      # Content-Encoding: aws-chunked. OCI Object Storage answers that with
+      # 501 NotImplemented. The backend's skip_s3_checksum covers the state
+      # object but not the .tflock write, so switch it off at the SDK level.
+      AWS_REQUEST_CHECKSUM_CALCULATION:  when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION:  when_required
 
     steps:
       - uses: actions/checkout@v5
