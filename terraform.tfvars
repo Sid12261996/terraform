@@ -4,9 +4,12 @@
 
 name_prefix = "immich"
 
-# Ampere A1 allowance measured in this tenancy: 2 OCPU / 12 GB.
-instance_ocpus     = 2
-instance_memory_gb = 12
+# The tenancy allows 2 OCPU / 12 GB of Ampere A1, but asking for all of it
+# was refused with "Out of host capacity" five times running. A smaller
+# request fits into a partly-used host, so take half and grow later - flex
+# shapes resize in place, so this is not a decision we are stuck with.
+instance_ocpus     = 1
+instance_memory_gb = 6
 
 # Block storage allowance: 200 GB total, boot volume included.
 boot_volume_gb = 50
