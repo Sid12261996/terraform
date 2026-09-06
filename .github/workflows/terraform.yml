@@ -32,7 +32,6 @@ jobs:
     name: Plan / Apply
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    environment: ${{ github.ref == 'refs/heads/main' && 'production' || '' }}
 
     env:
       # OCI provider credentials.
