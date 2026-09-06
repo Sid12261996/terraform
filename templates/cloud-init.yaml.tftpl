@@ -1,0 +1,175 @@
+#cloud-config
+# Brings up Immich on first boot. Every step is idempotent, so the script can
+# be re-run by hand for troubleshooting:
+#   sudo /usr/local/sbin/immich-bootstrap.sh
+package_update: true
+package_upgrade: false
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - e2fsprogs
+  - openssl
+
+write_files:
+  - path: /etc/immich-bootstrap.env
+    permissions: "0600"
+    content: |
+      LIBRARY_MOUNT="${library_mount}"
+      IMMICH_VERSION="${immich_version}"
+      DOMAIN_NAME="${domain_name}"
+      ACME_EMAIL="${acme_email}"
+
+  - path: /usr/local/sbin/immich-bootstrap.sh
+    permissions: "0750"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      # shellcheck disable=SC1091
+      source /etc/immich-bootstrap.env
+      log() { echo "[immich-bootstrap] $*"; }
+
+      APP_DIR="$${LIBRARY_MOUNT}/app"
+
+      # ---------- Docker ----------
+      if ! command -v docker >/dev/null 2>&1; then
+        log "installing Docker"
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+          | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        chmod a+r /etc/apt/keyrings/docker.gpg
+        echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$${VERSION_CODENAME}") stable" \
+          > /etc/apt/sources.list.d/docker.list
+        apt-get update -y
+        apt-get install -y docker-ce docker-ce-cli containerd.io \
+          docker-buildx-plugin docker-compose-plugin
+      fi
+      systemctl enable --now docker
+
+      # ---------- Data volume ----------
+      # Identify the attached block volume as the one disk that is not the
+      # root disk. Matching on device name is unreliable across reboots.
+      ROOT_SRC="$(findmnt -no SOURCE /)"
+      ROOT_DISK="/dev/$(lsblk -no PKNAME "$${ROOT_SRC}" | head -n1 | tr -d ' ')"
+      DATA_DEV="$(lsblk -dpno NAME,TYPE | awk -v root="$${ROOT_DISK}" '$2=="disk" && $1!=root {print $1; exit}')"
+
+      if [ -z "$${DATA_DEV}" ]; then
+        log "ERROR: no data disk attached; refusing to store the library on the boot volume"
+        exit 1
+      fi
+      log "data disk: $${DATA_DEV}"
+
+      # Format only if the disk has no filesystem. This guard is what keeps a
+      # re-run from wiping the photo library.
+      if ! blkid "$${DATA_DEV}" >/dev/null 2>&1; then
+        log "creating ext4 filesystem on $${DATA_DEV}"
+        mkfs.ext4 -F "$${DATA_DEV}"
+      fi
+
+      mkdir -p "$${LIBRARY_MOUNT}"
+      DISK_UUID="$(blkid -s UUID -o value "$${DATA_DEV}")"
+      if ! grep -q "$${DISK_UUID}" /etc/fstab; then
+        echo "UUID=$${DISK_UUID} $${LIBRARY_MOUNT} ext4 defaults,nofail 0 2" >> /etc/fstab
+      fi
+      mount -a
+      mountpoint -q "$${LIBRARY_MOUNT}" || { log "ERROR: $${LIBRARY_MOUNT} not mounted"; exit 1; }
+
+      mkdir -p "$${LIBRARY_MOUNT}/library" "$${LIBRARY_MOUNT}/postgres" "$${APP_DIR}"
+
+      # ---------- Immich compose stack ----------
+      cd "$${APP_DIR}"
+      log "fetching Immich compose files ($${IMMICH_VERSION})"
+      if [ "$${IMMICH_VERSION}" = "release" ]; then
+        BASE="https://github.com/immich-app/immich/releases/latest/download"
+      else
+        BASE="https://github.com/immich-app/immich/releases/download/$${IMMICH_VERSION}"
+      fi
+      curl -fsSL -o docker-compose.yml "$${BASE}/docker-compose.yml"
+      curl -fsSL -o example.env "$${BASE}/example.env"
+
+      # Generate the database password once and keep it across re-runs.
+      if [ ! -f .env ]; then
+        cp example.env .env
+        DB_PASS="$(openssl rand -hex 24)"
+        sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$${DB_PASS}|" .env
+      fi
+      sed -i "s|^UPLOAD_LOCATION=.*|UPLOAD_LOCATION=$${LIBRARY_MOUNT}/library|" .env
+      sed -i "s|^DB_DATA_LOCATION=.*|DB_DATA_LOCATION=$${LIBRARY_MOUNT}/postgres|" .env
+      sed -i "s|^IMMICH_VERSION=.*|IMMICH_VERSION=$${IMMICH_VERSION}|" .env
+      chmod 600 .env
+
+      # ---------- Reverse proxy ----------
+      # Caddy terminates TLS when a domain is set, and otherwise just forwards
+      # port 80. Immich itself only ever listens on localhost:2283.
+      mkdir -p "$${LIBRARY_MOUNT}/caddy"
+      if [ -n "$${DOMAIN_NAME}" ]; then
+        cat > Caddyfile <<CADDY
+      $${DOMAIN_NAME} {
+        tls $${ACME_EMAIL}
+        reverse_proxy immich-server:2283
+      }
+      CADDY
+      else
+        cat > Caddyfile <<CADDY
+      :80 {
+        reverse_proxy immich-server:2283
+      }
+      CADDY
+      fi
+
+      # Immich's own 2283 binding is left alone: both the OCI security list and
+      # the host firewall already drop it, and !override needs a newer Compose
+      # than some hosts ship.
+      cat > docker-compose.override.yml <<'OVERRIDE'
+      services:
+        caddy:
+          image: caddy:2-alpine
+          container_name: immich_caddy
+          restart: always
+          ports:
+            - '80:80'
+            - '443:443'
+          volumes:
+            - ./Caddyfile:/etc/caddy/Caddyfile:ro
+            - caddy_data:/data
+            - caddy_config:/config
+          depends_on:
+            - immich-server
+      volumes:
+        caddy_data:
+        caddy_config:
+      OVERRIDE
+
+      log "starting Immich"
+      docker compose up -d --remove-orphans
+      log "done; Immich is reachable on port 80/443"
+
+  # Re-run the bootstrap on every boot so a reboot re-mounts the volume and
+  # restarts the stack even if the first attempt failed.
+  - path: /etc/systemd/system/immich-bootstrap.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Bootstrap and start Immich
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/sbin/immich-bootstrap.sh
+      StandardOutput=append:/var/log/immich-bootstrap.log
+      StandardError=append:/var/log/immich-bootstrap.log
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  # Ubuntu's default iptables rules on OCI images drop everything but SSH.
+  # The security list is the real firewall, so open the proxy ports here too.
+  - iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT
+  - iptables -I INPUT 1 -p tcp --dport 443 -j ACCEPT
+  - netfilter-persistent save || true
+  - systemctl daemon-reload
+  - systemctl enable --now immich-bootstrap.service

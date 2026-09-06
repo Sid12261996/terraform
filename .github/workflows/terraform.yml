@@ -1,0 +1,154 @@
+name: Terraform
+
+on:
+  # Everything in this repository is infrastructure, so run on any change
+  # except pure documentation. Listing what to skip is more reliable here
+  # than listing what to match: GitHub's '**' only behaves predictably as a
+  # whole path segment, so a filter like '**.tf' can silently match nothing.
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'openspec/**']
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**', 'openspec/**']
+  workflow_dispatch:
+    inputs:
+      destroy:
+        description: 'Destroy the stack instead of applying it'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  TF_VERSION: '1.13.3'
+  TF_IN_AUTOMATION: 'true'
+  TF_INPUT: 'false'
+
+concurrency:
+  # State is shared, so never let two runs touch it at once.
+  group: terraform-immich
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    name: Plan / Apply
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      # OCI provider credentials.
+      TF_VAR_tenancy_ocid:     ${{ secrets.OCI_TENANCY_OCID }}
+      TF_VAR_user_ocid:        ${{ secrets.OCI_USER_OCID }}
+      TF_VAR_fingerprint:      ${{ secrets.OCI_FINGERPRINT }}
+      TF_VAR_private_key:      ${{ secrets.OCI_PRIVATE_KEY }}
+      TF_VAR_region:           ${{ vars.OCI_REGION }}
+      TF_VAR_compartment_ocid: ${{ vars.OCI_COMPARTMENT_OCID }}
+      TF_VAR_ssh_public_key:   ${{ secrets.SSH_PUBLIC_KEY }}
+      # Object Storage customer secret key, used only by the S3 state backend.
+      AWS_ACCESS_KEY_ID:     ${{ secrets.OCI_S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.OCI_S3_SECRET_ACCESS_KEY }}
+      # The AWS SDK defaults to sending a trailing checksum, which forces
+      # Content-Encoding: aws-chunked. OCI Object Storage answers that with
+      # 501 NotImplemented. The backend's skip_s3_checksum covers the state
+      # object but not the .tflock write, so switch it off at the SDK level.
+      AWS_REQUEST_CHECKSUM_CALCULATION:  when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION:  when_required
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Check required configuration
+        run: |
+          missing=()
+          [ -n "${{ secrets.OCI_TENANCY_OCID }}" ]        || missing+=("secret OCI_TENANCY_OCID")
+          [ -n "${{ secrets.OCI_USER_OCID }}" ]           || missing+=("secret OCI_USER_OCID")
+          [ -n "${{ secrets.OCI_FINGERPRINT }}" ]         || missing+=("secret OCI_FINGERPRINT")
+          [ -n "${{ secrets.OCI_PRIVATE_KEY }}" ]         || missing+=("secret OCI_PRIVATE_KEY")
+          [ -n "${{ secrets.SSH_PUBLIC_KEY }}" ]          || missing+=("secret SSH_PUBLIC_KEY")
+          [ -n "${{ secrets.OCI_S3_ACCESS_KEY_ID }}" ]    || missing+=("secret OCI_S3_ACCESS_KEY_ID")
+          [ -n "${{ secrets.OCI_S3_SECRET_ACCESS_KEY }}" ]|| missing+=("secret OCI_S3_SECRET_ACCESS_KEY")
+          [ -n "${{ vars.OCI_REGION }}" ]                 || missing+=("variable OCI_REGION")
+          [ -n "${{ vars.TF_STATE_BUCKET }}" ]            || missing+=("variable TF_STATE_BUCKET")
+          [ -n "${{ vars.TF_STATE_NAMESPACE }}" ]         || missing+=("variable TF_STATE_NAMESPACE")
+          if [ ${#missing[@]} -gt 0 ]; then
+            printf '::error::Missing required configuration: %s\n' "${missing[*]}"
+            echo "See docs/setup.md for how to create each one." >&2
+            exit 1
+          fi
+
+      - name: Configure remote state backend
+        run: |
+          # The endpoint is a nested block, which cannot be passed with
+          # -backend-config on the command line, so write a file instead.
+          cat > backend.auto.hcl <<HCL
+          bucket = "${{ vars.TF_STATE_BUCKET }}"
+          region = "${{ vars.OCI_REGION }}"
+          endpoints = {
+            s3 = "https://${{ vars.TF_STATE_NAMESPACE }}.compat.objectstorage.${{ vars.OCI_REGION }}.oraclecloud.com"
+          }
+          HCL
+
+      - name: Terraform init
+        run: terraform init -backend-config=backend.auto.hcl
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        id: plan
+        run: |
+          if [ "${{ inputs.destroy }}" = "true" ]; then
+            terraform plan -destroy -out=tfplan
+          else
+            terraform plan -out=tfplan
+          fi
+          terraform show -no-color tfplan > plan.txt
+
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            let plan = fs.readFileSync('plan.txt', 'utf8');
+            const limit = 60000;
+            if (plan.length > limit) plan = plan.slice(0, limit) + '\n... truncated ...';
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `#### Terraform Plan\n\`\`\`hcl\n${plan}\n\`\`\``,
+            });
+
+      - name: Terraform apply
+        if: github.event_name != 'pull_request'
+        run: terraform apply -auto-approve tfplan
+
+      - name: Summary
+        if: github.event_name != 'pull_request' && success()
+        run: |
+          {
+            echo "## Immich deployed"
+            echo
+            echo "| Output | Value |"
+            echo "|---|---|"
+            echo "| URL | $(terraform output -raw immich_url) |"
+            echo "| SSH | \`$(terraform output -raw ssh_command)\` |"
+            echo
+            echo "Immich pulls several GB of container images on first boot."
+            echo "Follow along with:"
+            echo
+            echo '```'
+            terraform output -raw bootstrap_log_command
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

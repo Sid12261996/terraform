@@ -1,48 +1,36 @@
 terraform {
-  required_version = ">= 1.6.0"
+  required_version = ">= 1.11.0"
 
   required_providers {
     oci = {
       source  = "oracle/oci"
-      version = "~> 5.0"
-    }
-    tls = {
-      source  = "hashicorp/tls"
-      version = "~> 4.0"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.0"
-    }
-    time = {
-      source  = "hashicorp/time"
-      version = "~> 0.9"
+      version = "~> 7.0"
     }
   }
 
-  # Remote state, via OCI Object Storage's S3-compatible API.
+  # Remote state on OCI Object Storage via its S3-compatible API.
   #
-  # The bucket ("terraform-state-prod") was provisioned by
-  # module.state_backend during bootstrap and already exists in the
-  # tenancy. Every value here is filled in at `terraform init` time with
-  # -backend-config (see the "Initialize Terraform" steps in
-  # .github/workflows/terraform-*.yml) because backend blocks cannot
-  # reference variables. Without this, every CI run starts from an empty
-  # local state, tries to recreate every resource from scratch, and
-  # collides with everything a previous run already created in OCI —
-  # which is why "AlreadyExists" and resource-quota errors kept
-  # reappearing across runs.
+  # This is the single most important part of this configuration. Without it
+  # every CI run starts from an empty state, re-creates every resource, and
+  # leaks the previous run's infrastructure. See docs/state-backend.md for the
+  # one-time bootstrap (bucket + customer secret key).
   #
-  # OCI's S3-compatible endpoint requires a Customer Secret Key (Identity
-  # > My Profile > Customer Secret Keys), which is a different credential
-  # from the API signing key used by the oci provider elsewhere.
+  # Values are supplied by `terraform init -backend-config=...` so the same
+  # code works locally and in CI.
   backend "s3" {
-    key                         = "terraform.tfstate"
-    skip_region_validation      = true
+    key = "immich/terraform.tfstate"
+
+    # OCI Object Storage speaks S3, but not the parts of it that the AWS SDK
+    # assumes are always present.
+    use_path_style              = true
     skip_credentials_validation = true
+    skip_region_validation      = true
     skip_requesting_account_id  = true
     skip_metadata_api_check     = true
     skip_s3_checksum            = true
-    force_path_style            = true
+
+    # Native S3 locking: writes a .tflock object next to the state. Removes the
+    # need for DynamoDB (which OCI has no equivalent of).
+    use_lockfile = true
   }
 }
