@@ -10,6 +10,10 @@ on:
   push:
     branches: [main]
     paths-ignore: ['**.md', 'docs/**', 'openspec/**']
+  # Ampere A1 capacity in a free tenancy comes and goes, so a deploy that
+  # cannot get a server is not finished - it is waiting. Keep trying.
+  schedule:
+    - cron: '*/30 * * * *'
   workflow_dispatch:
     inputs:
       destroy:
@@ -132,10 +136,52 @@ jobs:
 
       - name: Terraform apply
         if: github.event_name != 'pull_request'
-        run: terraform apply -auto-approve tfplan
+        run: |
+          set +e
+          attempts=3
+          for i in $(seq 1 "$attempts"); do
+            if [ "$i" = 1 ]; then
+              terraform apply -auto-approve tfplan 2>&1 | tee apply.log
+            else
+              # The failed attempt already wrote state, so the saved plan is
+              # stale and has to be recomputed.
+              terraform apply -auto-approve 2>&1 | tee apply.log
+            fi
+            status=${PIPESTATUS[0]}
+            [ "$status" = 0 ] && break
+            # Anything that is not a capacity shortage is a real error.
+            grep -q 'Out of host capacity' apply.log || break
+            [ "$i" = "$attempts" ] || sleep 60
+          done
+          echo "apply_status=$status" >> "$GITHUB_ENV"
+
+      - name: Report result
+        if: github.event_name != 'pull_request'
+        run: |
+          [ "${apply_status:-0}" = 0 ] && exit 0
+          if ! grep -q 'Out of host capacity' apply.log; then
+            exit "$apply_status"
+          fi
+          {
+            echo "## Waiting for Ampere capacity"
+            echo
+            echo "OCI has no free \`VM.Standard.A1.Flex\` capacity in"
+            echo "\`${{ vars.OCI_REGION }}\` at the moment. This is not a"
+            echo "configuration error - every other resource is built and"
+            echo "recorded in state, and only the server is missing."
+            echo
+            echo "The scheduled run retries every 30 minutes and will finish"
+            echo "the deploy on its own once capacity frees up. Lowering"
+            echo "\`instance_ocpus\` and \`instance_memory_gb\` in"
+            echo "terraform.tfvars improves the odds if you are in a hurry."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::Out of Ampere host capacity; retrying on the next scheduled run."
+          # A scheduled run is the retry, so do not report it as a failure.
+          # A run someone triggered should go red so they see it.
+          [ "${{ github.event_name }}" = schedule ]
 
       - name: Summary
-        if: github.event_name != 'pull_request' && success()
+        if: github.event_name != 'pull_request' && success() && env.apply_status == '0'
         run: |
           {
             echo "## Immich deployed"
