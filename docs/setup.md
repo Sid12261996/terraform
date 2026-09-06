@@ -29,11 +29,26 @@ Terraform needs somewhere to record what it created. Without this, every run
 starts blind and builds a second copy of everything.
 
 ```bash
-./scripts/bootstrap-state.sh
+./scripts/bootstrap-state.sh --new-key --set-github
 ```
 
-It creates the Object Storage bucket and an Object Storage *customer secret
-key*, then prints the values to store in GitHub. The secret is shown once.
+It creates the Object Storage bucket, mints an Object Storage *customer
+secret key*, and pushes both into the repository's Actions variables and
+secrets. The secret is displayed by OCI exactly once, so the script never
+tries to read one back.
+
+Re-runnable. The bucket is left alone if it exists, and no key is minted
+unless you ask:
+
+| Flag | Effect |
+|---|---|
+| *(none)* | create the bucket, report what is already configured |
+| `--new-key` | also mint a customer secret key |
+| `--rotate` | remove existing keys first (OCI caps them at two per user) |
+| `--set-github` | write the results to GitHub instead of printing them |
+| `--bucket NAME` | use a different bucket name |
+
+If you lose the secret, `--new-key --rotate --set-github` replaces it.
 
 ## 3. Store the configuration in GitHub
 
@@ -58,14 +73,18 @@ Repository **secrets**:
 | `OCI_S3_ACCESS_KEY_ID` | from step 2 |
 | `OCI_S3_SECRET_ACCESS_KEY` | from step 2 |
 
-`gh` can set them all:
+`--set-github` in step 2 handles the state ones. The rest, once:
 
 ```bash
-gh variable set OCI_REGION --body "ap-hyderabad-1"
-gh secret   set SSH_PUBLIC_KEY < ~/.ssh/immich.pub
-gh secret   set OCI_PRIVATE_KEY < ~/.oci/oci_api_key.pem
-# ...and so on
+gh secret set SSH_PUBLIC_KEY  < ~/.ssh/immich.pub
+gh secret set OCI_PRIVATE_KEY < ~/.oci/oci_api_key.pem
+gh secret set OCI_TENANCY_OCID --body "$(oci iam compartment list --query 'data[0]."compartment-id"' --raw-output)"
+gh secret set OCI_USER_OCID    --body "$(oci iam user list --query 'data[0].id' --raw-output)"
+gh secret set OCI_FINGERPRINT  --body "<fingerprint from the OCI console>"
 ```
+
+The workflow checks all of them up front and names whichever are missing,
+rather than failing partway through an apply.
 
 ## 4. Deploy
 
@@ -81,6 +100,20 @@ requests a Let's Encrypt certificate on the next boot.
 Without a domain, Immich is served over plain **HTTP**. Fine for a first look,
 but do not upload a real photo library to it — the session cookie crosses the
 internet unencrypted.
+
+## Starting over
+
+If a previous pipeline ran without remote state, the tenancy may hold
+resources Terraform no longer knows about. Find them and remove them:
+
+```bash
+./scripts/list-orphans.sh                    # what exists
+./scripts/cleanup-orphans.sh                 # dry run
+./scripts/cleanup-orphans.sh --apply --all   # delete it
+```
+
+Both are re-runnable; deletions that fail because something still references
+the resource are reported, so run again until `list-orphans.sh` is clean.
 
 ## Troubleshooting
 
