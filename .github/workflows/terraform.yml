@@ -1,11 +1,15 @@
 name: Terraform
 
 on:
+  # Everything in this repository is infrastructure, so run on any change
+  # except pure documentation. Listing what to skip is more reliable here
+  # than listing what to match: GitHub's '**' only behaves predictably as a
+  # whole path segment, so a filter like '**.tf' can silently match nothing.
   pull_request:
-    paths: ['**.tf', '**.tftpl', '*.tfvars', '.github/workflows/terraform.yml']
+    paths-ignore: ['**.md', 'docs/**', 'openspec/**']
   push:
     branches: [main]
-    paths: ['**.tf', '**.tftpl', '*.tfvars', '.github/workflows/terraform.yml']
+    paths-ignore: ['**.md', 'docs/**', 'openspec/**']
   workflow_dispatch:
     inputs:
       destroy:
