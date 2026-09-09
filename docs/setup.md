@@ -121,8 +121,10 @@ the resource are reported, so run again until `list-orphans.sh` is clean.
 tenancies are served last. It is not a configuration error, and there is
 nothing to fix: the rest of the stack is already built and in state, and
 the workflow retries three times per run and again every 30 minutes on a
-schedule until a server appears. It can take hours or days. Lowering
-`instance_ocpus` and `instance_memory_gb` improves the odds.
+schedule until a server appears. It can take hours or days. Asking for
+less improves the odds, which is why `terraform.tfvars` requests half the
+tenancy's Ampere allowance rather than all of it; flex shapes resize in
+place, so it can be raised once a server is running.
 
 **`LimitExceeded`** — you are asking for more than step 1 reported.
 
